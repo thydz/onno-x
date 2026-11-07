@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/azure-sdk-dotnet/skills/azure-ai-agents-persistent-dotnet",
+  "repoSkillId": "microsoft/skills:.github/plugins/azure-sdk-dotnet/skills/azure-ai-agents-persistent-dotnet",
+  "defaultBranch": "main"
+}

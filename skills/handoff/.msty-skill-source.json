@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "engineering/handoff/skills/handoff",
+  "repoSkillId": "alirezarezvani/claude-skills:engineering/handoff/skills/handoff",
+  "defaultBranch": "main"
+}

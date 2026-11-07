@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "anthropics/skills",
+  "repoOwner": "anthropics",
+  "repoName": "skills",
+  "repoPath": "skills/internal-comms",
+  "repoSkillId": "anthropics/skills:skills/internal-comms",
+  "defaultBranch": "main"
+}

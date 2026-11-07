@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "openai/skills",
+  "repoOwner": "openai",
+  "repoName": "skills",
+  "repoPath": "skills/.curated/jupyter-notebook",
+  "repoSkillId": "openai/skills:skills/.curated/jupyter-notebook",
+  "defaultBranch": "main"
+}

@@ -1,0 +1,22 @@
+Arsitektur:
+onno-x/
+├── onno_x/
+│   ├── __init__.py
+│   ├── main.py          # entry point, typer app
+│   ├── config.py        # model registry + API key store (~/.onno-x/config.json)
+│   ├── session.py       # conversation loop, history, tools
+│   ├── providers/
+│   │   ├── __init__.py
+│   │   ├── base.py      # BaseProvider ABC
+│   │   ├── anthropic.py # Anthropic (claude-*)
+│   │   ├── openai.py    # OpenAI + OpenAI-compatible (Hermes, Ollama, LM Studio, dll)
+│   │   └── ollama.py    # Ollama native (pull/list/run)
+│   ├── tools/
+│   │   ├── __init__.py
+│   │   ├── shell.py     # bash execution
+│   │   ├── fs.py        # read/write/list file
+│   │   └── web.py       # fetch URL
+│   └── ui.py            # rich terminal renderer
+├── pyproject.toml
+├── README.md
+└── setup.cfg

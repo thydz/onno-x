@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/azure-sdk-python/skills/azure-ai-contentsafety-py",
+  "repoSkillId": "microsoft/skills:.github/plugins/azure-sdk-python/skills/azure-ai-contentsafety-py",
+  "defaultBranch": "main"
+}

@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/azure-sdk-dotnet/skills/m365-agents-dotnet",
+  "repoSkillId": "microsoft/skills:.github/plugins/azure-sdk-dotnet/skills/m365-agents-dotnet",
+  "defaultBranch": "main"
+}

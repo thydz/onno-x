@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "engineering/demo-video/skills/demo-video",
+  "repoSkillId": "alirezarezvani/claude-skills:engineering/demo-video/skills/demo-video",
+  "defaultBranch": "main"
+}

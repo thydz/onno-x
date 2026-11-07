@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/microsoft-365-agents-toolkit/skills/m365-agent-evaluator",
+  "repoSkillId": "microsoft/skills:.github/plugins/microsoft-365-agents-toolkit/skills/m365-agent-evaluator",
+  "defaultBranch": "main"
+}

@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/azure-advisor/skills/azure-advisor-actionability",
+  "repoSkillId": "microsoft/skills:.github/plugins/azure-advisor/skills/azure-advisor-actionability",
+  "defaultBranch": "main"
+}

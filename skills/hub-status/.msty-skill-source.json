@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "engineering/agenthub/skills/hub-status",
+  "repoSkillId": "alirezarezvani/claude-skills:engineering/agenthub/skills/hub-status",
+  "defaultBranch": "main"
+}

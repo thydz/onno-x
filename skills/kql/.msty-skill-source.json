@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/skills/kql",
+  "repoSkillId": "microsoft/skills:.github/skills/kql",
+  "defaultBranch": "main"
+}

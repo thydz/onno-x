@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "openai/skills",
+  "repoOwner": "openai",
+  "repoName": "skills",
+  "repoPath": "skills/.curated/define-goal",
+  "repoSkillId": "openai/skills:skills/.curated/define-goal",
+  "defaultBranch": "main"
+}

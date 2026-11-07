@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "openai/skills",
+  "repoOwner": "openai",
+  "repoName": "skills",
+  "repoPath": "skills/.curated/figma-generate-library",
+  "repoSkillId": "openai/skills:skills/.curated/figma-generate-library",
+  "defaultBranch": "main"
+}

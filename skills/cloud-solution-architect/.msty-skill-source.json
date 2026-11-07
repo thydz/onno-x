@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/skills/cloud-solution-architect",
+  "repoSkillId": "microsoft/skills:.github/skills/cloud-solution-architect",
+  "defaultBranch": "main"
+}

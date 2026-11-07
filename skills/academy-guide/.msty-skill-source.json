@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "anthropics/skills",
+  "repoOwner": "anthropics",
+  "repoName": "skills",
+  "repoPath": "skills/academy-guide",
+  "repoSkillId": "anthropics/skills:skills/academy-guide",
+  "defaultBranch": "main"
+}

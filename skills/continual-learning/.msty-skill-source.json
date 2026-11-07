@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/skills/continual-learning",
+  "repoSkillId": "microsoft/skills:.github/skills/continual-learning",
+  "defaultBranch": "main"
+}

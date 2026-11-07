@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "ra-qm-team/access-lifecycle/skills/access-lifecycle",
+  "repoSkillId": "alirezarezvani/claude-skills:ra-qm-team/access-lifecycle/skills/access-lifecycle",
+  "defaultBranch": "main"
+}

@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "muratcankoylan/Agent-Skills-for-Context-Engineering",
+  "repoOwner": "muratcankoylan",
+  "repoName": "Agent-Skills-for-Context-Engineering",
+  "repoPath": "skills/harness-engineering",
+  "repoSkillId": "muratcankoylan/Agent-Skills-for-Context-Engineering:skills/harness-engineering",
+  "defaultBranch": "main"
+}

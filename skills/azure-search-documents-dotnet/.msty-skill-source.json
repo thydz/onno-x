@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/azure-sdk-dotnet/skills/azure-search-documents-dotnet",
+  "repoSkillId": "microsoft/skills:.github/plugins/azure-sdk-dotnet/skills/azure-search-documents-dotnet",
+  "defaultBranch": "main"
+}

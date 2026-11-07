@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "muratcankoylan/Agent-Skills-for-Context-Engineering",
+  "repoOwner": "muratcankoylan",
+  "repoName": "Agent-Skills-for-Context-Engineering",
+  "repoPath": "examples/book-sft-pipeline",
+  "repoSkillId": "muratcankoylan/Agent-Skills-for-Context-Engineering:examples/book-sft-pipeline",
+  "defaultBranch": "main"
+}

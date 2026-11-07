@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/azure-sdk-typescript/skills/azure-appconfiguration-ts",
+  "repoSkillId": "microsoft/skills:.github/plugins/azure-sdk-typescript/skills/azure-appconfiguration-ts",
+  "defaultBranch": "main"
+}

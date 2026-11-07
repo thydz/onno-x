@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/azure-cost/skills/cost-estimation",
+  "repoSkillId": "microsoft/skills:.github/plugins/azure-cost/skills/cost-estimation",
+  "defaultBranch": "main"
+}

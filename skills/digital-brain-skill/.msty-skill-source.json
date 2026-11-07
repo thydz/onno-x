@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "muratcankoylan/Agent-Skills-for-Context-Engineering",
+  "repoOwner": "muratcankoylan",
+  "repoName": "Agent-Skills-for-Context-Engineering",
+  "repoPath": "examples/digital-brain-skill",
+  "repoSkillId": "muratcankoylan/Agent-Skills-for-Context-Engineering:examples/digital-brain-skill",
+  "defaultBranch": "main"
+}

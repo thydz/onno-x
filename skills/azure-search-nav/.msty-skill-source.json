@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/aks-skills/skills/azure-search-nav",
+  "repoSkillId": "microsoft/skills:.github/plugins/aks-skills/skills/azure-search-nav",
+  "defaultBranch": "main"
+}

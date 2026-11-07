@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "anthropics/skills",
+  "repoOwner": "anthropics",
+  "repoName": "skills",
+  "repoPath": "skills/canvas-design",
+  "repoSkillId": "anthropics/skills:skills/canvas-design",
+  "defaultBranch": "main"
+}

@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "engineering/agent-memory/skills/agent-memory",
+  "repoSkillId": "alirezarezvani/claude-skills:engineering/agent-memory/skills/agent-memory",
+  "defaultBranch": "main"
+}

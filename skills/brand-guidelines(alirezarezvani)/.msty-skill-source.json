@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "marketing-skill/skills/brand-guidelines",
+  "repoSkillId": "alirezarezvani/claude-skills:marketing-skill/skills/brand-guidelines",
+  "defaultBranch": "main"
+}

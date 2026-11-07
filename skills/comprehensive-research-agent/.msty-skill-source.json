@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "muratcankoylan/Agent-Skills-for-Context-Engineering",
+  "repoOwner": "muratcankoylan",
+  "repoName": "Agent-Skills-for-Context-Engineering",
+  "repoPath": "examples/interleaved-thinking/generated_skills/comprehensive-research-agent",
+  "repoSkillId": "muratcankoylan/Agent-Skills-for-Context-Engineering:examples/interleaved-thinking/generated_skills/comprehensive-research-agent",
+  "defaultBranch": "main"
+}

@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "openai/skills",
+  "repoOwner": "openai",
+  "repoName": "skills",
+  "repoPath": "skills/.curated/chatgpt-apps",
+  "repoSkillId": "openai/skills:skills/.curated/chatgpt-apps",
+  "defaultBranch": "main"
+}

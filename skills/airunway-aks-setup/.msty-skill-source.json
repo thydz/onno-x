@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/azure-skills/skills/airunway-aks-setup",
+  "repoSkillId": "microsoft/skills:.github/plugins/azure-skills/skills/airunway-aks-setup",
+  "defaultBranch": "main"
+}

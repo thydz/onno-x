@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/aks-skills/skills/aks-troubleshooting",
+  "repoSkillId": "microsoft/skills:.github/plugins/aks-skills/skills/aks-troubleshooting",
+  "defaultBranch": "main"
+}

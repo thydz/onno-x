@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "openai/skills",
+  "repoOwner": "openai",
+  "repoName": "skills",
+  "repoPath": "skills/.system/imagegen",
+  "repoSkillId": "openai/skills:skills/.system/imagegen",
+  "defaultBranch": "main"
+}

@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "ra-qm-team/skills/information-security-manager-iso27001",
+  "repoSkillId": "alirezarezvani/claude-skills:ra-qm-team/skills/information-security-manager-iso27001",
+  "defaultBranch": "main"
+}

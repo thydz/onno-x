@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/skills/copilot-sdk",
+  "repoSkillId": "microsoft/skills:.github/skills/copilot-sdk",
+  "defaultBranch": "main"
+}

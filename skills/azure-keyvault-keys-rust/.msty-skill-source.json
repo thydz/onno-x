@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/azure-sdk-rust/skills/azure-keyvault-keys-rust",
+  "repoSkillId": "microsoft/skills:.github/plugins/azure-sdk-rust/skills/azure-keyvault-keys-rust",
+  "defaultBranch": "main"
+}

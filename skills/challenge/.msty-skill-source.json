@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "c-level-advisor/executive-mentor/skills/challenge",
+  "repoSkillId": "alirezarezvani/claude-skills:c-level-advisor/executive-mentor/skills/challenge",
+  "defaultBranch": "main"
+}

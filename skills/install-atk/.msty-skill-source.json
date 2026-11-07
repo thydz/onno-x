@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/microsoft-365-agents-toolkit/skills/install-atk",
+  "repoSkillId": "microsoft/skills:.github/plugins/microsoft-365-agents-toolkit/skills/install-atk",
+  "defaultBranch": "main"
+}

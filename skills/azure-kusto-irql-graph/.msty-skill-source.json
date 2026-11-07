@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/azure-kusto-graph-skills/skills/azure-kusto-irql-graph",
+  "repoSkillId": "microsoft/skills:.github/plugins/azure-kusto-graph-skills/skills/azure-kusto-irql-graph",
+  "defaultBranch": "main"
+}

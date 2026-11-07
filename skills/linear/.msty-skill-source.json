@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "openai/skills",
+  "repoOwner": "openai",
+  "repoName": "skills",
+  "repoPath": "skills/.curated/linear",
+  "repoSkillId": "openai/skills:skills/.curated/linear",
+  "defaultBranch": "main"
+}

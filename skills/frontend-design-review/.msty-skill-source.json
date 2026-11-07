@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/skills/frontend-design-review",
+  "repoSkillId": "microsoft/skills:.github/skills/frontend-design-review",
+  "defaultBranch": "main"
+}

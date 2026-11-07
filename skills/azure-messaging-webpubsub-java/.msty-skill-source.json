@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/azure-sdk-java/skills/azure-messaging-webpubsub-java",
+  "repoSkillId": "microsoft/skills:.github/plugins/azure-sdk-java/skills/azure-messaging-webpubsub-java",
+  "defaultBranch": "main"
+}

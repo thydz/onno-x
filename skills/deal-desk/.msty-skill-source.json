@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "commercial/skills/deal-desk",
+  "repoSkillId": "alirezarezvani/claude-skills:commercial/skills/deal-desk",
+  "defaultBranch": "main"
+}

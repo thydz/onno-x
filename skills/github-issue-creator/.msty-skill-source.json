@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/skills/github-issue-creator",
+  "repoSkillId": "microsoft/skills:.github/skills/github-issue-creator",
+  "defaultBranch": "main"
+}

@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/skills/debugview",
+  "repoSkillId": "microsoft/skills:.github/skills/debugview",
+  "defaultBranch": "main"
+}

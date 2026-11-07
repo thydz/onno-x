@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "engineering/chaos-engineering/skills/chaos-engineering",
+  "repoSkillId": "alirezarezvani/claude-skills:engineering/chaos-engineering/skills/chaos-engineering",
+  "defaultBranch": "main"
+}

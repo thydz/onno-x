@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/azure-skills/skills/microsoft-foundry/models/deploy-model",
+  "repoSkillId": "microsoft/skills:.github/plugins/azure-skills/skills/microsoft-foundry/models/deploy-model",
+  "defaultBranch": "main"
+}

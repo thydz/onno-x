@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "openai/skills",
+  "repoOwner": "openai",
+  "repoName": "skills",
+  "repoPath": "skills/.curated/gh-address-comments",
+  "repoSkillId": "openai/skills:skills/.curated/gh-address-comments",
+  "defaultBranch": "main"
+}

@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "engineering/book-to-skill/skills/book-to-skill",
+  "repoSkillId": "alirezarezvani/claude-skills:engineering/book-to-skill/skills/book-to-skill",
+  "defaultBranch": "main"
+}

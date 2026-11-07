@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "anthropics/skills",
+  "repoOwner": "anthropics",
+  "repoName": "skills",
+  "repoPath": "skills/claude-api",
+  "repoSkillId": "anthropics/skills:skills/claude-api",
+  "defaultBranch": "main"
+}

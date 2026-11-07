@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "openai/skills",
+  "repoOwner": "openai",
+  "repoName": "skills",
+  "repoPath": "skills/.curated/cloudflare-deploy",
+  "repoSkillId": "openai/skills:skills/.curated/cloudflare-deploy",
+  "defaultBranch": "main"
+}

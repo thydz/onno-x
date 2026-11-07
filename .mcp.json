@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "hexstrike": {
+      "command": "ssh",
+      "args": [
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=5",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=3",
+        "kali@192.168.100.102",
+        "/home/kali/hexstrike-ai-master/mcpo-venv/bin/python3 /home/kali/hexstrike-ai-master/hexstrike_mcp.py --server http://127.0.0.1:8888"
+      ]
+    },
+    "api-anything": {
+      "command": "/Users/mac/.nvm/versions/node/v24.17.0/bin/node",
+      "args": [
+        "/Users/mac/.npm/_npx/9f1821074a7a96a7/node_modules/api-anything/dist/cli.js",
+        "mcp"
+      ]
+    }
+  }
+}

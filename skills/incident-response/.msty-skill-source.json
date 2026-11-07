@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "engineering-team/skills/incident-response",
+  "repoSkillId": "alirezarezvani/claude-skills:engineering-team/skills/incident-response",
+  "defaultBranch": "main"
+}

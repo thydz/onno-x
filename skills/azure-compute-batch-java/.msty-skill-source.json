@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/azure-sdk-java/skills/azure-compute-batch-java",
+  "repoSkillId": "microsoft/skills:.github/plugins/azure-sdk-java/skills/azure-compute-batch-java",
+  "defaultBranch": "main"
+}

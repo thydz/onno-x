@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "compliance-os/skills/fda-qsr-audit-prep",
+  "repoSkillId": "alirezarezvani/claude-skills:compliance-os/skills/fda-qsr-audit-prep",
+  "defaultBranch": "main"
+}

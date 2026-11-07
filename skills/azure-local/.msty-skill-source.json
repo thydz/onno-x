@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/azure-local-skills/skills/azure-local",
+  "repoSkillId": "microsoft/skills:.github/plugins/azure-local-skills/skills/azure-local",
+  "defaultBranch": "main"
+}

@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "openai/skills",
+  "repoOwner": "openai",
+  "repoName": "skills",
+  "repoPath": "skills/.curated/hatch-pet",
+  "repoSkillId": "openai/skills:skills/.curated/hatch-pet",
+  "defaultBranch": "main"
+}

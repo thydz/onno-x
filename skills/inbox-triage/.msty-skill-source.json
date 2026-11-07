@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "productivity/email/skills/inbox-triage",
+  "repoSkillId": "alirezarezvani/claude-skills:productivity/email/skills/inbox-triage",
+  "defaultBranch": "main"
+}

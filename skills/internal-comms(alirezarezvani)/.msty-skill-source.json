@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "business-operations/skills/internal-comms",
+  "repoSkillId": "alirezarezvani/claude-skills:business-operations/skills/internal-comms",
+  "defaultBranch": "main"
+}

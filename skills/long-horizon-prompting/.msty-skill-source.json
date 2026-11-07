@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "muratcankoylan/Agent-Skills-for-Context-Engineering",
+  "repoOwner": "muratcankoylan",
+  "repoName": "Agent-Skills-for-Context-Engineering",
+  "repoPath": "skills/long-horizon-prompting",
+  "repoSkillId": "muratcankoylan/Agent-Skills-for-Context-Engineering:skills/long-horizon-prompting",
+  "defaultBranch": "main"
+}

@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "anthropics/skills",
+  "repoOwner": "anthropics",
+  "repoName": "skills",
+  "repoPath": "skills/doc-coauthoring",
+  "repoSkillId": "anthropics/skills:skills/doc-coauthoring",
+  "defaultBranch": "main"
+}

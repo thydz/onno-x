@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/azure-skills/skills/entra-app-registration",
+  "repoSkillId": "microsoft/skills:.github/plugins/azure-skills/skills/entra-app-registration",
+  "defaultBranch": "main"
+}

@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "muratcankoylan/Agent-Skills-for-Context-Engineering",
+  "repoOwner": "muratcankoylan",
+  "repoName": "Agent-Skills-for-Context-Engineering",
+  "repoPath": "skills/filesystem-context",
+  "repoSkillId": "muratcankoylan/Agent-Skills-for-Context-Engineering:skills/filesystem-context",
+  "defaultBranch": "main"
+}

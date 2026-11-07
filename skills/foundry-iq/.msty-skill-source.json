@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "microsoft/skills",
+  "repoOwner": "microsoft",
+  "repoName": "skills",
+  "repoPath": ".github/plugins/foundry-iq-skills/skills/foundry-iq",
+  "repoSkillId": "microsoft/skills:.github/plugins/foundry-iq-skills/skills/foundry-iq",
+  "defaultBranch": "main"
+}

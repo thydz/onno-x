@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "openai/skills",
+  "repoOwner": "openai",
+  "repoName": "skills",
+  "repoPath": "skills/.curated/gh-fix-ci",
+  "repoSkillId": "openai/skills:skills/.curated/gh-fix-ci",
+  "defaultBranch": "main"
+}

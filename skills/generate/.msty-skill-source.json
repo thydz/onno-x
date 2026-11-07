@@ -1,0 +1,9 @@
+{
+  "type": "github-repo",
+  "repoId": "alirezarezvani/claude-skills",
+  "repoOwner": "alirezarezvani",
+  "repoName": "claude-skills",
+  "repoPath": "engineering-team/playwright-pro/skills/generate",
+  "repoSkillId": "alirezarezvani/claude-skills:engineering-team/playwright-pro/skills/generate",
+  "defaultBranch": "main"
+}
