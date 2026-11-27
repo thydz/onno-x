@@ -40,7 +40,6 @@ ENV/
 *.pem
 *.key
 id_rsa*
-.firebaserc
 error.txt
 
 # MCP / model secrets & local IPs — use .mcp.json.example + env, keep local only
@@ -51,3 +50,9 @@ opencode.json
 # Per-user / per-project runtime
 .onno-x/
 .onno-x
+
+# Firebase CLI local cache
+.firebase/
+
+# local backups
+.salah/
