@@ -1,8 +1,10 @@
 import atexit
 import json
 import os
+import select
 import subprocess
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -40,6 +42,17 @@ def sanitize_json_schema(schema: Any) -> Any:
     return cleaned
 
 
+def _write_all(stream, data: bytes) -> None:
+    """Tulis semua byte ke stream binary (pipe unbuffered bisa write sebagian)."""
+    view = memoryview(data)
+    while view:
+        written = stream.write(view)
+        if not written:
+            break
+        view = view[written:]
+    stream.flush()
+
+
 class MCPServerProcess:
     def __init__(self, name: str, command: str, args: List[str], env: Optional[Dict[str, str]] = None):
         self.name = name
@@ -50,6 +63,8 @@ class MCPServerProcess:
         self.req_id = 0
         self.tools: List[Dict[str, Any]] = []
         self._lock = threading.Lock()
+        self._rx_buf = ""        # sisa data yang belum diparse menjadi baris JSON
+        self._stdout_fd: Optional[int] = None
 
     def start(self) -> bool:
         """Start server subprocess and perform JSON-RPC handshake."""
@@ -57,15 +72,19 @@ class MCPServerProcess:
         full_env.update(self.env)
         cmd = [self.command] + self.args
         try:
+            # Binary + unbuffered supaya stdout bisa dibaca via os.read() tanpa
+            # buffer text internal yang memblokir tanpa batas (lihat _read_line).
             self.proc = subprocess.Popen(
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,  # Prevent pipe buffer deadlock when child emits logs
-                text=True,
-                bufsize=1,
+                bufsize=0,
                 env=full_env,
             )
+            self._stdout_fd = self.proc.stdout.fileno()
+            self._rx_buf = ""
+
             # 1. Initialize
             init_resp = self._send_request("initialize", {
                 "protocolVersion": "2024-11-05",
@@ -86,43 +105,79 @@ class MCPServerProcess:
         except Exception:
             return False
 
+    def _read_line(self, deadline: float) -> Optional[str]:
+        """Baca satu baris dari stdout child dengan deadline yang benar-benar dipatuhi.
+
+        Kenapa tidak pakai `readline()` biasa?
+        `proc.stdout.readline()` pada pipe ber-buffer bisa memblokir SELAMANYA kalau
+        server belum mengirim karakter newline (mis. respons dikirim bertahap).
+        `select()` hanya menjamin "ada data di fd", tidak menjamin "ada baris lengkap".
+        Karena itu kita baca raw fd dengan `os.read()` dan menyimpan sisanya di buffer.
+        """
+        while True:
+            newline_idx = self._rx_buf.find("\n")
+            if newline_idx != -1:
+                line = self._rx_buf[:newline_idx]
+                self._rx_buf = self._rx_buf[newline_idx + 1:]
+                return line
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or self._stdout_fd is None:
+                return None
+
+            try:
+                ready, _, _ = select.select([self._stdout_fd], [], [], min(remaining, 0.25))
+            except (OSError, ValueError):
+                return None
+            if not ready:
+                continue
+
+            try:
+                chunk = os.read(self._stdout_fd, 65536)
+            except OSError:
+                return None
+            if not chunk:
+                return None  # child menutup stdout
+            self._rx_buf += chunk.decode("utf-8", errors="replace")
+
     def _send_request(self, method: str, params: dict, timeout: float = 10.0) -> Optional[dict]:
         with self._lock:
             if not self.proc or self.proc.poll() is not None:
                 return None
             self.req_id += 1
+            request_id = self.req_id
             payload = {
                 "jsonrpc": "2.0",
-                "id": self.req_id,
+                "id": request_id,
                 "method": method,
                 "params": params,
             }
             try:
-                msg = json.dumps(payload) + "\n"
-                self.proc.stdin.write(msg)
-                self.proc.stdin.flush()
+                msg = (json.dumps(payload) + "\n").encode("utf-8")
+                _write_all(self.proc.stdin, msg)
 
-                # Read line response with select timeout to prevent any permanent freeze
-                import select, time
-                deadline = time.time() + timeout
-                while time.time() < deadline:
-                    remain = max(0.05, deadline - time.time())
-                    rlist, _, _ = select.select([self.proc.stdout], [], [], remain)
-                    if not rlist:
-                        return None
-                    line = self.proc.stdout.readline()
-                    if not line:
+                deadline = time.monotonic() + timeout
+                while True:
+                    line = self._read_line(deadline)
+                    if line is None:
                         return None
                     line = line.strip()
                     if not line:
                         continue
-                    if "jsonrpc" in line and line.startswith("{"):
-                        try:
-                            data = json.loads(line)
-                            return data.get("result")
-                        except Exception:
-                            continue
-                return None
+                    if not (line.startswith("{") and "jsonrpc" in line):
+                        continue
+                    try:
+                        data = json.loads(line)
+                    except Exception:
+                        continue
+                    if not isinstance(data, dict):
+                        continue
+                    # Skip server-initiated notifications and any response
+                    # that is not ours; only return the matching result.
+                    if data.get("id") != request_id:
+                        continue
+                    if "result" in data or "error" in data:
+                        return data.get("result")
             except Exception:
                 return None
 
@@ -136,9 +191,8 @@ class MCPServerProcess:
                 "params": params,
             }
             try:
-                msg = json.dumps(payload) + "\n"
-                self.proc.stdin.write(msg)
-                self.proc.stdin.flush()
+                msg = (json.dumps(payload) + "\n").encode("utf-8")
+                _write_all(self.proc.stdin, msg)
             except Exception:
                 pass
 
@@ -165,9 +219,11 @@ class MCPServerProcess:
             except Exception:
                 try:
                     self.proc.kill()
+                    self.proc.wait(timeout=1.0)  # reapkan biar tidak jadi zombie
                 except Exception:
                     pass
             self.proc = None
+            self._stdout_fd = None
 
 
 class MCPManager:
@@ -216,8 +272,6 @@ class MCPManager:
         if not config_data:
             return
 
-        from concurrent.futures import ThreadPoolExecutor
-
         def _init_server(item):
             s_name, s_cfg = item
             cmd = s_cfg.get("command")
@@ -229,16 +283,42 @@ class MCPManager:
                     return s_name, proc
             return None
 
-        with ThreadPoolExecutor(max_workers=min(len(config_data), 4)) as executor:
-            results = list(executor.map(_init_server, config_data.items()))
+        # PENTING: pakai daemon thread, BUKAN ThreadPoolExecutor.
+        # Worker ThreadPoolExecutor dibuat sebagai non-daemon thread, sehingga
+        # interpreter akan `join()` tanpa timeout saat shutdown. Kalau salah satu
+        # worker macet, program nge-hang saat keluar, dan Ctrl+C kedua memunculkan
+        # "Exception ignored on threading shutdown".
+        # Daemon thread tidak pernah ditunggu interpreter -> shutdown selalu bersih.
+        results: Dict[str, MCPServerProcess] = {}
+        result_lock = threading.Lock()
 
-        for res in results:
+        def _worker(item):
+            res = _init_server(item)
             if res:
-                s_name, proc = res
-                self.servers[s_name] = proc
-                for t in proc.tools:
-                    tool_id = f"mcp__{s_name}__{t['name']}"
-                    self.tool_map[tool_id] = (proc, t["name"])
+                with result_lock:
+                    results[res[0]] = res[1]
+
+        threads: List[threading.Thread] = []
+        for item in config_data.items():
+            th = threading.Thread(
+                target=_worker,
+                args=(item,),
+                daemon=True,
+                name=f"mcp-init-{item[0]}",
+            )
+            th.start()
+            threads.append(th)
+
+        # Tunggu dengan deadline total, jangan join tanpa batas.
+        deadline = time.monotonic() + 2.0
+        for th in threads:
+            th.join(timeout=max(0.1, deadline - time.monotonic()))
+
+        for s_name, proc in results.items():
+            self.servers[s_name] = proc
+            for t in proc.tools:
+                tool_id = f"mcp__{s_name}__{t['name']}"
+                self.tool_map[tool_id] = (proc, t["name"])
 
     def get_tool_definitions(self, max_direct_tools_per_server: int = 4) -> List[Dict[str, Any]]:
         """
@@ -265,7 +345,7 @@ class MCPManager:
                         },
                     })
             else:
-                # Server has a large suite (e.g. HexStrike 184 tools, or api-anything).
+                # Server has a large suite of tools.
                 # 1. Provide universal runner tool to execute ANY tool
                 defs.append({
                     "type": "function",

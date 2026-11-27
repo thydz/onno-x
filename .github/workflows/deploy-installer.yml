@@ -1,0 +1,37 @@
+name: Deploy install.sh to Firebase Hosting
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "install.sh"
+      - "public/**"
+      - "firebase.json"
+      - ".github/workflows/deploy-installer.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Keep the served copy in sync with the canonical root script.
+      - name: Sync install.sh -> public/install.sh
+        run: |
+          mkdir -p public
+          cp install.sh public/install.sh
+          chmod +x public/install.sh
+
+      - name: Validate shell syntax
+        run: bash -n public/install.sh
+
+      # Requires repo secret FIREBASE_TOKEN (created via `firebase login:ci`)
+      # and the real project id in .firebaserc. No service-account JSON needed.
+      - name: Deploy to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
+          channelId: live

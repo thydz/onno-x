@@ -1,9 +1,11 @@
-from pathlib import Path
-from typing import Optional
+import json
 import os
 import re
 import shutil
 import subprocess
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
 import typer
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion, ThreadedCompleter
@@ -13,16 +15,35 @@ from prompt_toolkit.keys import Keys
 from prompt_toolkit.lexers import Lexer
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style
+from rich.markdown import Markdown
+from rich.markup import escape as _escape_markup
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
+from textual.events import Paste
+from textual.widgets import Input as TextualInput
 
 from onno_x.config import (
     CONFIG_DIR,
     ModelSpec,
     load_config,
+    obsidian_url,
     save_config,
 )
-from onno_x.session import AgentSession
+from onno_x.mentions import human_size as _human_size, iter_mentions
+from onno_x.session import AgentSession, estimate_tokens
+from onno_x.commands import (
+    detect_lint_command,
+    detect_test_command,
+    expand_alias,
+    find_command_help,
+    find_files,
+    git_log,
+    git_stash,
+    grep_repo,
+    run_shell_capture,
+    token_breakdown,
+)
 from onno_x.skills import (
     add_skill,
     delete_skill,
@@ -36,15 +57,23 @@ from onno_x.persistence import (
     save_session,
     load_session,
     list_sessions,
+    resolve_session_ref,
+    search_sessions,
     get_latest_session,
     delete_session,
+    save_draft,
+    load_draft,
+    clear_draft,
 )
 from onno_x.mcp import MCPManager
+from onno_x.interrupt import install_interrupt_guard
 from onno_x.tools import get_active_tool_definitions
 from onno_x.tools.obsidian import obsidian_search_notes, obsidian_read_note, obsidian_write_note
 from onno_x.ui import (
+    ACCENT_COLORS,
     console,
     print_banner,
+    resolve_accent,
     print_models_table,
     print_user_prompt_bar,
     create_rounded_prompt_message,
@@ -57,46 +86,48 @@ from onno_x.ui import (
 # Mirroring exact Claude Code slash commands from menu.md
 SLASH_COMMANDS = [
     ("/add-dir", "Menambahkan direktori lain agar dapat diakses selama sesi (/add-dir <path>)"),
-    ("/advisor", "Mengaktifkan, menonaktifkan, atau memilih model penasihat (/advisor [model|off])"),
+    ("/advisor", "Memilih model penasihat yang me-review tiap jawaban (/advisor [model|off])"),
     ("/agents", "Panduan dan status pengelolaan subagent/worker"),
     ("/all", "Mode All (YOLO): Eksekusi 100% otonom langsung tanpa prompt izin apa pun"),
     ("/auto", "Mode Auto: Eksekusi tool & perintah shell langsung tanpa meminta izin berulang"),
-    ("/autocompact", "Mengatur ambang batas context sebelum auto-compact (/autocompact [auto|<tokens>])"),
+    ("/autocompact", "Mengatur ambang auto-compact (/autocompact [auto|<tokens>|off])"),
     ("/autoresume", "Mengaktifkan/menonaktifkan auto-resume sesi saat onno-x dibuka (/autoresume [on|off])"),
-    ("/branch", "Membuat cabang percakapan baru untuk mencoba pendekatan lain (/branch [name])"),
+    ("/branch", "Menyimpan titik cabang percakapan sebagai sesi baru (/branch [name])"),
     ("/btw", "Mengajukan pertanyaan sampingan tanpa menambahkannya ke riwayat utama (/btw <tanya>)"),
     ("/bug", "Menghasilkan laporan bug dan diagnostik sistem (alias: /share)"),
     ("/cd", "Memindahkan direktori kerja sesi tanpa menghapus percakapan (/cd <path>)"),
     ("/clear", "Memulai percakapan baru dengan context kosong (alias: /reset, /new)"),
     ("/code-review", "Meninjau perubahan kode / PR untuk mendeteksi bug (alias: /review)"),
-    ("/color", "Mengubah tema warna atau aksen prompt (/color [color|default])"),
-    ("/commit", "Menganalisis git diff dan membuat conventional commit otomatis (/commit [msg])"),
-    ("/compact", "Merangkum percakapan untuk mengurangi pemakaian context tokens"),
+    ("/color", "Mengubah aksen prompt yang tersimpan di config (/color [color|default])"),
+    ("/commit", "Commit perubahan tracked, pesan opsional (/commit [msg])"),
+    ("/compact", "Memadatkan riwayat context, opsional dengan ringkasan (/compact [instruksi|<giliran>])"),
     ("/config", "Melihat atau mengubah konfigurasi onno-x (alias: /settings)"),
-    ("/context", "Menampilkan analisis pemakaian context window dan rincian pesan (/context [all])"),
+    ("/context", "Analisis pemakaian context per pesan, termasuk argumen tool (/context [all])"),
     ("/continue", "Melanjutkan sesi sebelumnya (alias dari /resume)"),
-    ("/copy", "Menyalin jawaban terakhir ke clipboard terminal (/copy)"),
-    ("/cost", "Menampilkan token usage dan perkiraan biaya sesi (alias: /usage, /stats)"),
+    ("/copy", "Menyalin jawaban ke clipboard (/copy [N], N=ke berapa dari akhir)"),
+    ("/cost", "Token usage + perkiraan biaya dari tarif model (alias: /usage, /stats)"),
     ("/diff", "Menampilkan dan meninjau perubahan git diff pada working tree"),
     ("/doctor", "Mendiagnosis instalasi, network model, git, dan file panduan (alias: /checkup)"),
     ("/effort", "Mengatur tingkat reasoning/temperature model (/effort [low|medium|high])"),
     ("/exit", "Keluar dari sesi onno-x (alias: /quit)"),
     ("/export", "Mengekspor riwayat percakapan menjadi file markdown (/export [filename])"),
     ("/fast", "Mengaktifkan atau menonaktifkan Fast Mode deterministik (/fast [on|off])"),
-    ("/feedback", "Mengirim masukan atau laporan kualitas respons"),
-    ("/fork", "Menyalin sesi percakapan saat ini ke sesi independen baru (/fork)"),
-    ("/goal", "Menetapkan target kondisi sebelum agent berhenti (/goal [condition|clear])"),
-    ("/help", "Menampilkan panduan dan seluruh daftar perintah garis miring"),
+    ("/feedback", "Mencatat masukan ke ~/.onno-x/feedback.jsonl (/feedback <pesan>)"),
+    ("/fork", "Menyalin percakapan ke sesi independen baru lalu pindah ke sana (/fork)"),
+    ("/goal", "Menetapkan goal yang bertahan di system prompt (/goal [kondisi|clear])"),
+    ("/help", "Daftar perintah garis miring; /help <command> untuk detail satu perintah"),
     ("/history", "Melihat riwayat sesi tersimpan di disk (alias dari /sessions)"),
     ("/init", "Membuat panduan awal project dalam file ONNO.md / CLAUDE.md"),
     ("/manual", "Mode Manual: Memerlukan konfirmasi izin setiap kali tool dijalankan"),
     ("/max_steps", "Alias dari /steps untuk mengatur batas langkah otonom (/steps <n>)"),
     ("/mcp", "Mengelola server Model Context Protocol dan tools eksternal (/mcp [list|reload])"),
-    ("/memory", "Melihat dan mengedit instruksi memori proyek (ONNO.md / CLAUDE.md)"),
+    ("/memory", "Melihat atau menambah memori proyek (/memory [edit <teks>])"),
     ("/mode", "Mengatur mode izin tools (/mode [auto|manual|all] atau tekan Shift+Tab)"),
     ("/model", "Memilih atau mengganti model AI aktif (/model <alias>)"),
     ("/models", "Melihat daftar semua model yang terdaftar"),
     ("/notify", "Mengaktifkan/menonaktifkan alert suara saat agent selesai (/notify [on|off])"),
+    ("/autoverify", "Jalankan test/lint otomatis setelah turn yang mengubah file (/autoverify [on|off])"),
+    ("/draft", "Lihat atau hapus draft prompt yang belum terkirim (/draft [clear])"),
     ("/obsidian", "Mencari, membaca, atau menulis catatan di Obsidian memory (/obsidian [search|read|write])"),
     ("/output-style", "Mengganti gaya jawaban (/output-style [default|concise|verbose])"),
     ("/permissions", "Mengatur mode izin tools (/permissions [auto|manual|all] atau /mode)"),
@@ -104,13 +135,13 @@ SLASH_COMMANDS = [
     ("/plugin", "Mengelola plugin dan integrasi pihak ketiga (/plugin [list|add])"),
     ("/pr", "Membuat ringkasan pull request dan opsi create via GitHub CLI (/pr [title])"),
     ("/recap", "Membuat ringkasan eksekutif satu baris dari sesi saat ini"),
-    ("/resume", "Melanjutkan riwayat percakapan sebelumnya (/resume [session_id])"),
+    ("/resume", "Melanjutkan percakapan sebelumnya (/resume [nomor|session_id])"),
     ("/review", "Alias dari /code-review untuk meninjau perubahan kode"),
     ("/rewind", "Mengembalikan percakapan ke checkpoint sebelumnya (alias: /undo, /checkpoint)"),
-    ("/run", "Menjalankan aplikasi project dan menguji eksekusi secara langsung"),
+    ("/run", "Menjalankan perintah verifikasi secara lokal (/run [command])"),
     ("/save", "Menyimpan sesi percakapan saat ini ke disk (/save)"),
     ("/security-review", "Menganalisis kode untuk menemukan potensi celah keamanan"),
-    ("/sessions", "Melihat riwayat sesi tersimpan di disk (alias: /history)"),
+    ("/sessions", "Melihat/mencari sesi tersimpan: /sessions [kata] (alias: /history)"),
     ("/simplify", "Meninjau kode untuk menyederhanakan struktur & efisiensi"),
     ("/skill", "Menjalankan atau menginstal skill (/skill <name> atau /skill install <url>)"),
     ("/skills", "Menampilkan daftar seluruh skills yang tersedia (/skills [query])"),
@@ -119,7 +150,29 @@ SLASH_COMMANDS = [
     ("/terminal-setup", "Menguji kapabilitas render warna ANSI, unicode, dan font"),
     ("/usage", "Alias dari /cost untuk melihat statistik token & biaya"),
     ("/verify", "Memverifikasi hasil implementasi dengan menjalankan test/check"),
+    ("/accept-all", "Alias /all: eksekusi semua tool tanpa konfirmasi (YOLO)"),
+    ("/auto-resume", "Alias /autoresume: auto-load sesi terakhir saat dibuka"),
+    ("/bell", "Alias /notify: alert suara saat agent selesai"),
+    ("/limit", "Alias /steps: batas langkah otonom per giliran"),
+    ("/memo", "Alias /obsidian: memori catatan Obsidian"),
+    ("/save-session", "Alias /save: simpan sesi ke disk"),
+    ("/yolo", "Alias /all: mode izin ACCEPT ALL"),
+    ("/test", "Menjalankan test proyek (deteksi otomatis atau /test <command>)"),
+    ("/lint", "Menjalankan linter proyek (deteksi otomatis atau /lint <command>)"),
+    ("/todo", "Checklist tugas yang ikut masuk prompt dan bertahan saat /compact (/todo [add|done|rm|clear])"),
+    ("/snapshot", "Menyimpan checkpoint percakapan bernama (/snapshot [label])"),
+    ("/restore", "Memulihkan percakapan ke checkpoint bernama (/restore [label])"),
+    ("/undo-file", "Memulihkan satu file dari snapshot checkpoint terakhir (/undo-file <path>)"),
+    ("/grep", "Mencari pola di seluruh repo tanpa memanggil model (/grep <pola>)"),
+    ("/search", "Alias /grep untuk mencari teks di repo"),
+    ("/find", "Mencari file berdasarkan nama (/find <nama>)"),
+    ("/stash", "Membungkus git stash (/stash [push|pop|list] [label])"),
+    ("/alias", "Membuat alias command garis miring (/alias <nama> </command>)"),
+    ("/title", "Menamai sesi ini agar mudah dicari di /sessions (/title <teks>)"),
+    ("/tokens", "Rincian token per kategori: prompt, tool args, tool result, jawaban"),
+    ("/log", "Menampilkan commit terakhir beserta file yang berubah (/log [n])"),
 ]
+
 
 
 class SlashCompleter(Completer):
@@ -130,53 +183,19 @@ class SlashCompleter(Completer):
         if "\n" in text:
             return
 
-        # File @-mention autocompletion (safe, non-recursive parent scan)
+        # File @-mention autocompletion: folder dulu, lalu file, rekursif
+        # terbatas (lihat onno_x/mentions.py). Dipakai juga oleh TUI.
         last_word = text.split()[-1] if text.split() else ""
-        if last_word.startswith("@") and len(last_word) <= 60:
+        if last_word.startswith("@") and len(last_word) <= 200:
             prefix = last_word[1:]
-            cwd = Path.cwd()
-            ignore_dirs = {".git", ".venv", "venv", "node_modules", "__pycache__", ".onno-x", ".gemini", "dist", "build"}
-            count = 0
-            try:
-                if "/" in prefix:
-                    parts = prefix.split("/")
-                    parent_part = "/".join(parts[:-1])
-                    file_part = parts[-1].lower()
-                    search_dir = cwd / parent_part
-                    if search_dir.is_dir():
-                        for p in search_dir.iterdir():
-                            if count >= 30:
-                                break
-                            if p.name.startswith(".") or p.name in ignore_dirs:
-                                continue
-                            if p.name.lower().startswith(file_part):
-                                count += 1
-                                rel_path = str(p.relative_to(cwd))
-                                meta = "DIR" if p.is_dir() else f"{p.stat().st_size} B"
-                                yield Completion(
-                                    rel_path,
-                                    start_position=-len(prefix),
-                                    display="@" + rel_path,
-                                    display_meta=meta,
-                                )
-                else:
-                    for p in cwd.iterdir():
-                        if count >= 30:
-                            break
-                        if p.name.startswith(".") or p.name in ignore_dirs:
-                            continue
-                        if p.name.lower().startswith(prefix.lower()):
-                            count += 1
-                            rel_path = str(p.relative_to(cwd))
-                            meta = "DIR" if p.is_dir() else f"{p.stat().st_size} B"
-                            yield Completion(
-                                rel_path,
-                                start_position=-len(prefix),
-                                display="@" + rel_path,
-                                display_meta=meta,
-                            )
-            except Exception:
-                pass
+            for rel, is_dir, size in iter_mentions(Path.cwd(), prefix):
+                value = rel + "/" if is_dir else rel
+                yield Completion(
+                    value,
+                    start_position=-len(prefix),
+                    display="@" + value,
+                    display_meta="DIR" if is_dir else _human_size(size),
+                )
             return
 
         if text.startswith("/skill "):
@@ -301,6 +320,42 @@ def expand_pasted_blocks(text: str) -> str:
     return expanded
 
 
+class PasteFoldingInput(TextualInput):
+    """Single-line prompt that folds multi-line or long pastes into "[Pasted text #N]" badges.
+
+    Textual's Input._on_paste keeps only the first line and stops the event, so an
+    App-level on_paste handler never sees multi-line clipboard content. Overriding
+    here is the only place the full paste text is still available.
+    """
+
+    _FOLD_THRESHOLD = 80
+
+    def _on_paste(self, event: Paste) -> None:
+        if event.text:
+            self._insert_paste(event.text)
+        # prevent_default stops Textual's Input._on_paste (first line only) from
+        # running after this handler in the MRO walk.
+        event.prevent_default()
+        event.stop()
+
+    def action_paste(self) -> None:
+        clipboard = self.app.clipboard
+        if clipboard:
+            self._insert_paste(clipboard)
+
+    def _insert_paste(self, text: str) -> None:
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        if "\n" in text or len(text) > self._FOLD_THRESHOLD:
+            payload = register_pasted_block(text)
+        else:
+            payload = text
+        start, end = self.selection
+        if start == end:
+            self.insert_text_at_cursor(payload)
+        else:
+            self.replace(payload, start, end)
+
+
 class OnnoInputLexer(Lexer):
     """Syntax highlighter for input prompt, rendering folded paste pills in clean cyan badges."""
     def lex_document(self, document):
@@ -320,7 +375,7 @@ class OnnoInputLexer(Lexer):
         return get_line
 
 
-PROMPT_STYLE = Style.from_dict({
+BASE_PROMPT_STYLES = {
     "prompt.divider": "#555555",
     "prompt.edge": "#555555",
     "prompt.plan": "#f38ba8 bold",
@@ -349,7 +404,22 @@ PROMPT_STYLE = Style.from_dict({
     "completion-menu.meta.completion.current": "bg:#89b4fa #181825 italic",
     "scrollbar.background": "bg:#181825",
     "scrollbar.button": "bg:#45475a",
-})
+}
+
+
+# Accent-coloured parts of the prompt box; /color rewrites these live.
+ACCENT_STYLE_KEYS = ("prompt.divider", "prompt.edge", "prompt.arrow", "toolbar.border", "toolbar.arrow")
+
+
+def build_prompt_style(accent: Optional[str]) -> Style:
+    """Prompt style with the configured accent colour applied."""
+    color = resolve_accent(accent)
+    styles = dict(BASE_PROMPT_STYLES)
+    for key in ACCENT_STYLE_KEYS:
+        styles[key] = color
+    styles["prompt.arrow"] = f"{color} bold"
+    styles["toolbar.arrow"] = f"{color} bold"
+    return Style.from_dict(styles)
 
 
 def print_slash_menu():
@@ -403,7 +473,7 @@ def use_model(alias: str = typer.Argument(..., help="Model alias to activate")):
 def add_model(
     alias: str = typer.Argument(..., help="Short name/alias, e.g. onno, hermes, gpt4o"),
     provider: str = typer.Option("openai", help="Provider: openai, anthropic, or ollama"),
-    model_id: str = typer.Option(..., "--id", "-m", help="Target model ID/tag, e.g. onno-ai"),
+    model_id: str = typer.Option(..., "--id", "-m", help="Target model ID/tag, e.g. gpt-4o"),
     base_url: Optional[str] = typer.Option(None, "--url", "-u", help="API Base URL (e.g. http://localhost:11434/v1)"),
     api_key: Optional[str] = typer.Option(None, "--key", "-k", help="API Key (optional for local models)"),
     temp: float = typer.Option(0.2, "--temp", help="Sampling temperature"),
@@ -435,8 +505,8 @@ def remove_model(alias: str = typer.Argument(..., help="Model alias to remove"))
         console.print(f"[bold red]Model '{alias}' not found.[/bold red]")
         raise typer.Exit(code=1)
     del cfg.models[alias]
-    if cfg.active_model == alias and cfg.models:
-        cfg.active_model = next(iter(cfg.models.keys()))
+    if cfg.active_model == alias:
+        cfg.active_model = next(iter(cfg.models.keys()), "")
     save_config(cfg)
     console.print(f"[green]Model '{alias}' removed.[/green]")
 
@@ -514,7 +584,11 @@ def add_skill_cmd(
             console.print("[red]Aborted: Empty skill content.[/red]")
             raise typer.Exit(1)
 
-    path = add_skill(name, content, description=desc, local=local)
+    try:
+        path = add_skill(name, content, description=desc, local=local)
+    except ValueError as exc:
+        console.print(f"[bold red]{exc}[/bold red]")
+        raise typer.Exit(1)
     console.print(f"[bold green]✔ Skill '{name}' saved to:[/bold green] {path}")
 
 
@@ -571,6 +645,26 @@ def tui_command(model: Optional[str] = typer.Option(None, "--model", "-m", help=
     run_tui(active_model=model)
 
 
+@app.command("serve")
+@app.command("web")
+def serve_command(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address (default: 127.0.0.1, lokal saja)"),
+    port: int = typer.Option(8765, "--port", "-p", help="Port (otomatis cari yang kosong kalau dipakai)"),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Override active model untuk sesi ini"),
+    open_browser: bool = typer.Option(True, "--open/--no-open", help="Buka otomatis di browser"),
+    allow_remote: bool = typer.Option(False, "--allow-remote", help="Izinkan bind ke non-loopback (berisiko: agent bisa jalankan shell)"),
+):
+    """Jalankan onno-x Web UI di browser (setara `opencode serve`)."""
+    from onno_x.web_server import run_web_server
+    run_web_server(
+        host=host,
+        port=port,
+        model=model,
+        open_browser=open_browser,
+        allow_remote=allow_remote,
+    )
+
+
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
@@ -580,6 +674,10 @@ def main(
     cli: bool = typer.Option(False, "--cli", "-c", help="Launch classic readline CLI instead of Textual full-screen UI"),
 ):
     """Start interactive coding session or execute single prompt."""
+    # Penjaga Ctrl+C: kalau interpreter sudah shutting down dan ada worker yang
+    # macet, Ctrl+C berikutnya keluar paksa (tanpa traceback "Exception ignored").
+    install_interrupt_guard()
+
     if ctx.invoked_subcommand is not None:
         return
 
@@ -604,22 +702,30 @@ def main(
         if target_id:
             loaded = load_session(target_id)
             if loaded:
-                session.session_id = loaded.get("session_id", target_id)
-                session.messages = loaded.get("messages", session.messages)
-                session.turns_count = loaded.get("turns_count", 0)
-                session.permission_mode = loaded.get("permission_mode", "auto")
-                session.plan_mode = loaded.get("plan_mode", False)
+                # Same path as the /resume command: goal, output style, extra
+                # dirs and advisor used to be dropped when resuming from a flag.
+                session.restore_from_dict(loaded)
                 console.print(f"[bold green]✔ Resumed session:[/bold green] [yellow]{target_id}[/yellow]")
 
     # One-shot mode: ambil dari --prompt atau trailing extra arguments (misal: onno-x "buat file")
     raw_prompt = prompt or (" ".join(ctx.args).strip() if ctx.args else None)
     if raw_prompt:
-        session.run_turn(expand_at_file_mentions(raw_prompt))
+        try:
+            session.run_turn(expand_at_file_mentions(raw_prompt))
+        except Exception as exc:
+            # One-shot mode has no outer loop to catch this; a render/verify
+            # error must not dump a traceback after the work was saved.
+            console.print(f"[bold red]Turn failed:[/bold red] {_escape_markup(str(exc))}")
+            raise typer.Exit(code=1)
         return
 
     # Textual full-screen UI is the DEFAULT mode:
     # Keeps input box permanently locked at the bottom, and renders answers above it!
     if not cli:
+        import sys
+        # Clear terminal screen and purge scrollback history buffer so only onno-x is visible
+        sys.stdout.write("\033[2J\033[3J\033[H")
+        sys.stdout.flush()
         from onno_x.tui import OnnoXUI
         tui_app = OnnoXUI(active_model=cfg.active_model, session=session)
         tui_app.run()
@@ -629,8 +735,12 @@ def main(
 
     # Interactive REPL mode
     console.clear()
-    print_banner(cfg.active_model)
-    pad_to_bottom()
+    banner_lines = print_banner(
+        cfg.active_model,
+        cfg.accent_color,
+        session_id=getattr(session, "session_id", None),
+    )
+    pad_to_bottom(banner_lines)
     # Keybindings: Enter executes, Esc+Enter inserts newline, BracketedPaste folds multi-line paste
     kb = KeyBindings()
 
@@ -649,6 +759,15 @@ def main(
         idx = order.index(cur) if cur in order else 0
         session.permission_mode = order[(idx + 1) % len(order)]
         event.app.invalidate()
+
+    @kb.add("c-c")
+    def _save_draft_on_interrupt(event):
+        # Ctrl+C at the prompt used to throw away whatever was typed. Keep it so
+        # the next prompt (or the next launch) can offer it back.
+        text = event.current_buffer.text.strip()
+        if text:
+            save_draft(text)
+        event.app.exit(exception=KeyboardInterrupt, style="class:exiting")
 
     @kb.add(Keys.BracketedPaste)
     def _handle_paste(event):
@@ -684,17 +803,28 @@ def main(
         multiline=True,
         key_bindings=kb,
         lexer=OnnoInputLexer(),
-        style=PROMPT_STYLE,
+        style=build_prompt_style(cfg.accent_color),
     )
 
     last_response = ""
 
+    restored = load_draft()
+    pending_default = restored["text"] if restored else ""
+    if restored:
+        console.print(
+            f"[dim]📝 Draft dipulihkan ({restored.get('saved_at', '')}). "
+            "Enter untuk kirim, /draft clear untuk buang.[/dim]"
+        )
+
     while True:
         try:
             try:
-                user_input = pt_session.prompt()
+                user_input = pt_session.prompt(default=pending_default)
+                pending_default = ""
             except KeyboardInterrupt:
-                console.print("\n[dim](Type /exit or press Ctrl+D to quit)[/dim]")
+                kept = load_draft()
+                pending_default = kept["text"] if kept else ""
+                console.print("\n[dim](Draft disimpan · ketik /exit atau Ctrl+D untuk keluar)[/dim]")
                 continue
             except EOFError:
                 console.print("[dim]Goodbye![/dim]")
@@ -702,6 +832,8 @@ def main(
             clean = user_input.strip()
             if not clean:
                 continue
+            # The prompt is on its way to the model, so the draft is spent.
+            clear_draft()
 
             # Render full-width highlighted command bar in history matching Claude Code CLI
             print_user_prompt_bar(clean)
@@ -712,6 +844,9 @@ def main(
 
             # Unfold any folded pasted badges back into original full content
             clean = expand_pasted_blocks(clean)
+            # /alias rewrites the line before parsing so aliases behave exactly
+            # like typing the stored command.
+            clean = expand_alias(cfg, clean)
 
             # Core slash commands dispatcher matching menu.md
             cmd_parts = clean.split()
@@ -723,14 +858,25 @@ def main(
                 break
 
             elif base_cmd in ("/help", "/"):
-                print_slash_menu()
+                detail = find_command_help(SLASH_COMMANDS, cmd_arg) if cmd_arg.strip() else None
+                if detail:
+                    console.print(Markdown(detail))
+                else:
+                    if cmd_arg.strip():
+                        console.print(f"[yellow]Tidak ada command cocok dengan '{cmd_arg}'.[/yellow]")
+                    print_slash_menu()
+                    console.print("[dim]Tip: /help <command> untuk detail satu command.[/dim]")
                 continue
 
             elif base_cmd in ("/clear", "/reset", "/new"):
                 console.clear()
                 session.reset()
-                print_banner(cfg.active_model)
-                pad_to_bottom()
+                banner_lines = print_banner(
+                    cfg.active_model,
+                    cfg.accent_color,
+                    session_id=getattr(session, "session_id", None),
+                )
+                pad_to_bottom(banner_lines)
                 continue
 
             elif base_cmd in ("/bug", "/share"):
@@ -746,22 +892,37 @@ def main(
                     f"- **Active MCP Servers**: {list(MCPManager.get_instance().servers.keys())}\n"
                     f"- **Workspace**: {Path.cwd()}\n"
                 )
-                console.print(Panel(bug_report, title="Diagnostic Share Report", border_style="red"))
+                console.print(Panel(Text(bug_report), title="Diagnostic Share Report", border_style="red"))
                 continue
 
             elif base_cmd == "/color":
-                valid_colors = ["cyan", "magenta", "green", "yellow", "blue", "red", "white", "default"]
-                if not cmd_arg or cmd_arg.lower() not in valid_colors:
-                    console.print(f"[yellow]Usage: /color [{'/'.join(valid_colors)}][/yellow]")
+                if not cmd_arg or cmd_arg.lower() not in ACCENT_COLORS:
+                    console.print(f"[yellow]Usage: /color [{'/'.join(ACCENT_COLORS)}][/yellow]")
+                    console.print(f"[dim]Active: {cfg.accent_color}[/dim]")
                 else:
                     new_color = cmd_arg.lower()
-                    accent_color = "cyan" if new_color == "default" else new_color
-                    console.print(f"[{accent_color}]✔ Theme accent color set to: {new_color}[/{accent_color}]")
+                    cfg.accent_color = new_color
+                    session.config.accent_color = new_color
+                    save_config(cfg)
+                    # Apply immediately: the prompt box, toolbar and banner all follow it.
+                    pt_session.style = build_prompt_style(new_color)
+                    accent = resolve_accent(new_color)
+                    console.print(f"[{accent}]✔ Theme accent color set to: {new_color}[/{accent}] [dim](tersimpan, langsung aktif)[/dim]")
                 continue
 
             elif base_cmd == "/compact":
-                dropped = session.compact()
-                console.print(f"[green]✔ Compacted conversation history (dropped {dropped} older messages).[/green]")
+                keep = 2
+                focus = None
+                if cmd_arg.isdecimal():
+                    keep = max(1, int(cmd_arg))
+                elif cmd_arg.strip():
+                    focus = cmd_arg.strip()
+                dropped = session.compact(keep_last_turns=keep, instructions=focus)
+                if dropped:
+                    extra = " + ringkasan model" if focus else ""
+                    console.print(f"[green]✔ Compacted conversation history (dropped {dropped} older messages{extra}).[/green]")
+                else:
+                    console.print("[yellow]Tidak ada giliran lama yang bisa dipadatkan.[/yellow]")
                 continue
 
             elif base_cmd in ("/config", "/settings"):
@@ -780,7 +941,9 @@ def main(
                             else:
                                 setattr(session.spec, k, v)
                             save_config(session.config)
-                            console.print(f"[green]✔ Updated config {k} = {v}[/green]")
+                            # Never echo secret values back into the transcript.
+                            shown = "***" if any(s in k.lower() for s in ("key", "token", "secret", "password")) else v
+                            console.print(f"[green]✔ Updated config {k} = {shown}[/green]")
                         except Exception as ex:
                             console.print(f"[red]Failed to set {k}: {str(ex)}[/red]")
                     else:
@@ -801,14 +964,26 @@ def main(
                 in_tok = session.total_input_tokens
                 out_tok = session.total_output_tokens
                 is_local = session.spec.provider in ("ollama",) or any(h in (session.spec.base_url or "") for h in ["localhost", "192.168", "127.0.0.1", "10.0"])
-                cost_str = "$0.0000 (Local Self-hosted)" if is_local else f"${(in_tok * 0.000003 + out_tok * 0.000015):.4f} (API Estimated)"
+                in_price = getattr(session.spec, "input_cost_per_mtok", 0.0) or 0.0
+                out_price = getattr(session.spec, "output_cost_per_mtok", 0.0) or 0.0
+                if is_local:
+                    cost_str = "$0.0000 (Local Self-hosted)"
+                elif in_price or out_price:
+                    cost = (in_tok / 1_000_000) * in_price + (out_tok / 1_000_000) * out_price
+                    cost_str = (
+                        f"${cost:.4f} (API Estimated @ ${in_price:g}/${out_price:g} per 1M"
+                        " in/out tokens)"
+                    )
+                else:
+                    cost_str = "tidak diketahui (isi input_cost_per_mtok/output_cost_per_mtok di config)"
 
                 console.print(f"[bold cyan]Session Usage & Statistics:[/bold cyan]")
                 console.print(f"  • Model:               {session.spec.name}")
                 console.print(f"  • Conversation turns:  {session.turns_count}")
                 console.print(f"  • Messages in context: {msg_count}")
-                console.print(f"  • Total input tokens:  ~{in_tok:,}")
-                console.print(f"  • Total output tokens: ~{out_tok:,}")
+                console.print(f"  • Input tokens sent:   ~{in_tok:,} [dim](sum of every request; history repeats per step)[/dim]")
+                console.print(f"  • Context size:        ~{session.last_input_tokens:,} [dim](last request)[/dim]")
+                console.print(f"  • Output tokens:       ~{out_tok:,}")
                 console.print(f"  • Estimated cost:      [bold green]{cost_str}[/bold green]")
                 continue
 
@@ -840,20 +1015,14 @@ def main(
                 except Exception as e:
                     console.print(f"  • AI Model API: [yellow]Reachable test failed ({str(e)})[/yellow]")
 
-                # External ecosystem connectivity (Obsidian & HexStrike)
+                # External ecosystem connectivity (Obsidian memory)
+                obs_base = obsidian_url()
                 try:
                     with httpx.Client(timeout=2.0) as client:
-                        r_obs = client.get("http://192.168.100.102:2233/")
-                        console.print(f"  • Obsidian Memory: [green]Online[/green] (http://192.168.100.102:2233, HTTP {r_obs.status_code})")
+                        r_obs = client.get(obs_base + "/")
+                        console.print(f"  • Obsidian Memory: [green]Online[/green] ({obs_base}, HTTP {r_obs.status_code})")
                 except Exception:
-                    console.print("  • Obsidian Memory: [dim yellow]Offline / Unreachable (192.168.100.102:2233)[/dim yellow]")
-
-                try:
-                    with httpx.Client(timeout=2.0) as client:
-                        r_hex = client.get("http://192.168.100.102:8888/health")
-                        console.print(f"  • HexStrike API:   [green]Online[/green] (http://192.168.100.102:8888, HTTP {r_hex.status_code})")
-                except Exception:
-                    console.print("  • HexStrike API:   [dim yellow]Offline / Unreachable (192.168.100.102:8888)[/dim yellow]")
+                    console.print(f"  • Obsidian Memory: [dim yellow]Offline / Unreachable ({obs_base})[/dim yellow]")
 
                 # MCP Manager status
                 mcp_mgr = MCPManager.get_instance()
@@ -887,9 +1056,14 @@ def main(
                 elif cmd_arg.lower() in ("off", "none", "disable"):
                     session.advisor_model = None
                     console.print("[dim]Advisor model disabled.[/dim]")
+                elif cmd_arg not in cfg.models:
+                    console.print(f"[red]Model '{cmd_arg}' tidak terdaftar.[/red] Gunakan /models untuk daftar.")
+                elif cmd_arg == session.spec.name:
+                    console.print("[yellow]Advisor harus model berbeda dari model aktif.[/yellow]")
                 else:
                     session.advisor_model = cmd_arg
-                    console.print(f"[green]✔ Advisor model set to: {cmd_arg}[/green]")
+                    console.print(f"[green]✔ Advisor model set to:[/green] {cmd_arg}")
+                    console.print("[dim]Setiap giliran selesai, model ini memberi review singkat.[/dim]")
                 continue
 
             elif base_cmd == "/agents":
@@ -905,13 +1079,52 @@ def main(
                 continue
 
             elif base_cmd == "/autocompact":
-                console.print("[bold green]✔ Autocompact is active.[/bold green] Automatically trims context buffer when nearing context limit.")
+                arg = cmd_arg.strip().lower()
+                if arg in ("off", "disable", "0"):
+                    cfg.autocompact_threshold = 0
+                    save_config(cfg)
+                    console.print("[bold yellow]✔ Autocompact OFF[/bold yellow] (context tidak dipangkas otomatis)")
+                elif arg in ("auto", "default", "on", ""):
+                    cfg.autocompact_threshold = None
+                    save_config(cfg)
+                    console.print("[bold green]✔ Autocompact AUTO[/bold green] (ambang dari kapasitas model)")
+                elif arg.isdecimal():
+                    val = int(arg)
+                    cfg.autocompact_threshold = val
+                    save_config(cfg)
+                    console.print(f"[bold green]✔ Autocompact threshold:[/bold green] {val:,} token")
+                else:
+                    console.print("[yellow]Usage: /autocompact [auto|<tokens>|off][/yellow]")
+                current = cfg.autocompact_threshold
+                shown = "auto" if current is None else ("off" if current <= 0 else f"{current:,} token")
+                console.print(f"[dim]Status: {shown}[/dim]")
                 continue
 
             elif base_cmd == "/branch":
-                bname = cmd_arg or f"branch-{len(session.checkpoints)+1}"
                 session.create_checkpoint()
-                console.print(f"[bold green]✔ Created conversation branch point:[/bold green] [yellow]{bname}[/yellow]")
+                slug = re.sub(r"[^A-Za-z0-9_-]+", "_", cmd_arg.strip())[:32]
+                branch_id = f"{session.session_id}_branch{('_' + slug) if slug else len(session.checkpoints)}"
+                # Reusing the same /branch label must not overwrite the earlier
+                # branch file; suffix until the id is free.
+                _existing = {s["id"] for s in list_sessions()}
+                _base, _dup = branch_id, 2
+                while branch_id in _existing:
+                    branch_id = f"{_base}_dup{_dup}"
+                    _dup += 1
+                try:
+                    branch_path = save_session(
+                        session_id=branch_id,
+                        messages=session.messages,
+                        model_name=session.spec.name,
+                        turns_count=session.turns_count,
+                        permission_mode=session.permission_mode,
+                        plan_mode=session.plan_mode,
+                        state=session._state(),
+                    )
+                    console.print(f"[bold green]✔ Branch point dibuat:[/bold green] [yellow]{branch_id}[/yellow]")
+                    console.print(f"[dim]{branch_path.name} · lanjutkan dengan /resume {branch_id}[/dim]")
+                except (OSError, ValueError) as exc:
+                    console.print(f"[red]Gagal menyimpan branch:[/red] {exc}")
                 continue
 
             elif base_cmd == "/btw":
@@ -926,40 +1139,74 @@ def main(
                 continue
 
             elif base_cmd == "/context":
-                total_chars = sum(len(str(m.get("content", ""))) for m in session.messages)
-                approx_tokens = total_chars // 4
-                table = Table(title="Context Usage Breakdown", border_style="magenta")
+                show_all = cmd_arg.strip().lower() in ("all", "full", "-a")
+                table = Table(
+                    title=f"Context Usage Breakdown{' (full)' if show_all else ''}",
+                    border_style="magenta",
+                )
                 table.add_column("Index", width=6)
                 table.add_column("Role", width=12, style="bold cyan")
                 table.add_column("Tokens (approx)", justify="right", width=15)
                 table.add_column("Preview", style="dim white")
 
                 for idx, m in enumerate(session.messages):
-                    c = str(m.get("content", ""))
-                    toks = len(c) // 4
-                    snip = c.replace("\n", " ")[:60]
-                    table.add_row(str(idx), m.get("role", "unknown"), f"~{toks:,}", snip)
+                    c = str(m.get("content") or "")
+                    tool_calls = m.get("tool_calls")
+                    label = f"{c} [tool_calls: {len(tool_calls)}]" if tool_calls else c
+                    flat = label.replace("\n", " ")
+                    snip = flat if show_all else flat[:60]
+                    table.add_row(str(idx), m.get("role", "unknown"), f"~{estimate_tokens([m]):,}", snip)
                 console.print(table)
-                console.print(f"[bold]Total Messages:[/bold] {len(session.messages)}  •  [bold]Estimated Tokens:[/bold] ~{approx_tokens:,}")
+                console.print(
+                    f"[bold]Total Messages:[/bold] {len(session.messages)}  •  "
+                    f"[bold]Estimated Tokens:[/bold] ~{estimate_tokens(session.messages):,}  •  "
+                    f"[dim]/context all[/dim] untuk teks penuh"
+                )
                 continue
 
             elif base_cmd == "/copy":
-                target_text = last_response or (session.messages[-1].get("content") if session.messages else "")
+                replies = [m for m in session.messages if m.get("role") == "assistant" and m.get("content")]
+                index = int(cmd_arg) if cmd_arg.strip().isdecimal() else 1
+                if index < 1:
+                    index = 1
+                if index == 1 and last_response:
+                    target_text = last_response
+                elif index <= len(replies):
+                    target_text = str(replies[-index].get("content") or "")
+                else:
+                    console.print(f"[yellow]Hanya ada {len(replies)} jawaban assistant di riwayat.[/yellow]")
+                    continue
                 if not target_text:
                     console.print("[dim]No response to copy.[/dim]")
                 else:
                     copied = False
-                    # macOS pbcopy
-                    try:
-                        p = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
-                        p.communicate(target_text.encode("utf-8"))
-                        copied = True
-                    except Exception:
-                        pass
+                    # pbcopy is macOS-only; try the usual Linux/BSD/Termux tools
+                    # before giving up and printing the text.
+                    candidates = [
+                        ["pbcopy"],
+                        ["wl-copy"],
+                        ["xclip", "-selection", "clipboard"],
+                        ["xsel", "--clipboard", "--input"],
+                        ["termux-clipboard-set"],
+                    ]
+                    for cmd_ in candidates:
+                        if not shutil.which(cmd_[0]):
+                            continue
+                        try:
+                            res = subprocess.run(
+                                cmd_, input=target_text.encode("utf-8"), check=False
+                            )
+                        except (OSError, ValueError):
+                            continue
+                        if res.returncode == 0:
+                            copied = True
+                            break
                     if copied:
-                        console.print("[bold green]✔ Copied last response to clipboard.[/bold green]")
+                        label = "last response" if index == 1 else f"response #{index} from the end"
+                        console.print(f"[bold green]✔ Copied {label} to clipboard.[/bold green]")
                     else:
-                        console.print(Panel(target_text, title="Response Content", border_style="green"))
+                        console.print("[dim]Clipboard tidak tersedia; ditampilkan di bawah.[/dim]")
+                        console.print(Panel(Text(target_text), title="Response Content", border_style="green"))
                 continue
 
             elif base_cmd == "/diff":
@@ -967,7 +1214,7 @@ def main(
                 if not diff_res:
                     stat_res = subprocess.run("git status -s", shell=True, capture_output=True, text=True).stdout.strip()
                     diff_res = f"No unstaged diff.\nStatus:\n{stat_res or 'Working tree clean'}"
-                console.print(Panel(diff_res, title="Git Working Tree Diff", border_style="yellow"))
+                console.print(Panel(Text(diff_res), title="Git Working Tree Diff", border_style="yellow"))
                 continue
 
             elif base_cmd == "/commit":
@@ -1009,7 +1256,16 @@ def main(
                         commit_msg = ""
 
                 if c_choice in ("y", "yes", "e", "edit") and commit_msg:
-                    subprocess.run("git add -A", shell=True, check=True)
+                    # Stage tracked changes only: `git add -A` silently swallowed
+                    # untracked secrets/config files into commits.
+                    subprocess.run("git add -u", shell=True, check=True)
+                    untracked = subprocess.run(
+                        "git ls-files --others --exclude-standard", shell=True,
+                        capture_output=True, text=True,
+                    ).stdout.split()
+                    if untracked:
+                        shown = ", ".join(untracked[:5]) + (f" (+{len(untracked)-5})" if len(untracked) > 5 else "")
+                        console.print(f"[dim]Untracked tidak di-stage: {shown} — gunakan git add bila perlu.[/dim]")
                     res = subprocess.run(["git", "commit", "-m", commit_msg], capture_output=True, text=True)
                     if res.returncode == 0:
                         console.print(f"[bold green]✔ Committed successfully:[/bold green] {commit_msg}")
@@ -1038,7 +1294,7 @@ def main(
                 ], tools=[])
 
                 pr_body = pr_body.strip() if pr_body else "Automated PR from onno-x."
-                console.print(Panel(f"## {pr_title}\n\n{pr_body}", title="Generated PR Details", border_style="cyan"))
+                console.print(Panel(Text(f"## {pr_title}\n\n{pr_body}"), title="Generated PR Details", border_style="cyan"))
 
                 gh_check = subprocess.run("which gh", shell=True, capture_output=True)
                 if gh_check.returncode == 0:
@@ -1096,6 +1352,61 @@ def main(
                     session.notify_completion = not session.notify_completion
                     st = "ENABLED" if session.notify_completion else "DISABLED"
                     console.print(f"[cyan]Completion alert: {st}[/cyan]")
+                # Persist so the choice survives the next launch.
+                cfg.notify_completion = session.notify_completion
+                try:
+                    save_config(cfg)
+                except OSError:
+                    pass
+                continue
+
+            elif base_cmd == "/autoverify":
+                choice = cmd_arg.lower().strip()
+                if choice in ("on", "enable", "true", "1"):
+                    cfg.auto_verify = True
+                elif choice in ("off", "disable", "false", "0"):
+                    cfg.auto_verify = False
+                elif choice:
+                    console.print("[yellow]Usage: /autoverify [on|off][/yellow]")
+                    continue
+                else:
+                    cfg.auto_verify = not cfg.auto_verify
+                try:
+                    save_config(cfg)
+                except OSError:
+                    pass
+                state = "AKTIF" if cfg.auto_verify else "NONAKTIF"
+                console.print(
+                    f"[cyan]Auto-verify: {state}[/cyan] "
+                    "[dim](test/lint project dijalankan setelah turn yang mengubah file)[/dim]"
+                )
+                if cfg.auto_verify:
+                    from onno_x.commands import detect_lint_command, detect_test_command
+                    detected = detect_test_command() or detect_lint_command()
+                    console.print(
+                        f"[dim]Perintah terdeteksi: {detected}[/dim]" if detected
+                        else "[dim]Belum ada test/lint yang terdeteksi di project ini.[/dim]"
+                    )
+                continue
+
+            elif base_cmd == "/draft":
+                if cmd_arg.lower().strip() in ("clear", "hapus", "delete", "-d"):
+                    removed = clear_draft()
+                    console.print(
+                        "[green]✔ Draft dihapus.[/green]" if removed
+                        else "[dim]Tidak ada draft tersimpan.[/dim]"
+                    )
+                else:
+                    draft = load_draft()
+                    if not draft:
+                        console.print("[dim]Tidak ada draft untuk direktori ini.[/dim]")
+                    else:
+                        console.print(Panel(
+                            Text(draft["text"]),
+                            title=f"Draft tersimpan {_escape_markup(str(draft.get('saved_at', '')))}",
+                            border_style="cyan",
+                        ))
+                        console.print("[dim]/draft clear untuk menghapusnya.[/dim]")
                 continue
 
             elif base_cmd in ("/obsidian", "/memo"):
@@ -1114,7 +1425,7 @@ def main(
                         console.print("[yellow]Usage: /obsidian read <note_name>[/yellow]")
                     else:
                         content = obsidian_read_note(sub_arg)
-                        console.print(Panel(content, title=f"Obsidian Note: {sub_arg}", border_style="magenta"))
+                        console.print(Panel(Text(content), title=f"Obsidian Note: {_escape_markup(sub_arg)}", border_style="magenta"))
                 elif sub_cmd in ("write", "save", "add"):
                     if not sub_arg or "|" not in sub_arg:
                         console.print("[yellow]Usage: /obsidian write <Title> | <Content>[/yellow]")
@@ -1124,7 +1435,7 @@ def main(
                         console.print(f"[bold green]✔ {res}[/bold green]")
                 else:
                     console.print(Panel(
-                        "## Obsidian Memory Integration (192.168.100.102:2233)\n\n"
+                        f"## Obsidian Memory Integration ({obsidian_url()})\n\n"
                         "Command Usage:\n"
                         "- **/obsidian search <keyword>**: Cari catatan & temuan di memori\n"
                         "- **/obsidian read <note.md>**: Baca isi lengkap catatan\n"
@@ -1148,10 +1459,19 @@ def main(
                 lines = [f"# onno-x Session Export\nModel: {session.spec.name}\n\n"]
                 for m in session.messages:
                     r = m.get("role", "").upper()
-                    c = m.get("content", "")
+                    c = m.get("content") or ""
                     if c:
                         lines.append(f"### {r}:\n{c}\n\n")
-                export_path.write_text("".join(lines), encoding="utf-8")
+                    tool_calls = m.get("tool_calls")
+                    if tool_calls:
+                        pretty = json.dumps(tool_calls, indent=2, ensure_ascii=False, default=str)
+                        lines.append(f"### {r} TOOL CALLS:\n```json\n{pretty}\n```\n\n")
+                try:
+                    export_path.parent.mkdir(parents=True, exist_ok=True)
+                    export_path.write_text("".join(lines), encoding="utf-8")
+                except OSError as exc:
+                    console.print(f"[red]Gagal mengekspor:[/red] {exc}")
+                    continue
                 console.print(f"[bold green]✔ Exported conversation to:[/bold green] {export_path}")
                 continue
 
@@ -1170,21 +1490,55 @@ def main(
                 continue
 
             elif base_cmd == "/feedback":
-                console.print("[dim]Feedback recorded locally in session diagnostics.[/dim]")
+                entry = {
+                    "at": datetime.now().isoformat(timespec="seconds"),
+                    "model": session.spec.name,
+                    "provider": session.spec.provider,
+                    "cwd": str(Path.cwd()),
+                    "turns": session.turns_count,
+                    "message": cmd_arg.strip(),
+                }
+                feedback_file = CONFIG_DIR / "feedback.jsonl"
+                try:
+                    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+                    with open(feedback_file, "a", encoding="utf-8") as fh:
+                        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                    console.print(f"[bold green]✔ Feedback tersimpan:[/bold green] {feedback_file}")
+                except OSError as exc:
+                    console.print(f"[red]Gagal menyimpan feedback:[/red] {exc}")
                 continue
 
             elif base_cmd == "/fork":
-                fork_id = f"fork_{len(session.checkpoints)+1}"
+                # Copy the live conversation into a new independent session id and
+                # switch to it; the original stays on disk untouched.
                 session.create_checkpoint()
-                console.print(f"[bold green]✔ Forked session to checkpoint:[/bold green] [yellow]{fork_id}[/yellow]")
+                fork_id = f"{session.session_id}_fork{datetime.now().strftime('%H%M%S')}"
+                try:
+                    fork_path = save_session(
+                        session_id=fork_id,
+                        messages=session.messages,
+                        model_name=session.spec.name,
+                        turns_count=session.turns_count,
+                        permission_mode=session.permission_mode,
+                        plan_mode=session.plan_mode,
+                        state=session._state(),
+                    )
+                    session.session_id = fork_id
+                    console.print(f"[bold green]✔ Forked ke sesi baru:[/bold green] [yellow]{fork_id}[/yellow]")
+                    console.print(f"[dim]{fork_path.name} · percakapan asli tetap utuh[/dim]")
+                except (OSError, ValueError) as exc:
+                    console.print(f"[red]Gagal fork sesi:[/red] {exc}")
                 continue
 
             elif base_cmd == "/goal":
-                if not cmd_arg or cmd_arg.lower() == "clear":
-                    console.print("[dim]Goal condition cleared.[/dim]")
+                if not cmd_arg or cmd_arg.lower() in ("clear", "off", "reset", "none"):
+                    had = session.goal
+                    session.set_goal(None)
+                    console.print("[dim]Goal condition cleared.[/dim]" if had else "[dim]Tidak ada goal aktif.[/dim]")
                 else:
+                    session.set_goal(cmd_arg)
                     console.print(f"[bold cyan]🎯 Goal Set:[/bold cyan] {cmd_arg}")
-                    session.run_turn(f"Execute until this goal is fully accomplished: {cmd_arg}")
+                    console.print("[dim]Masuk ke system prompt dan bertahan sampai /goal clear.[/dim]")
                 continue
 
             elif base_cmd == "/init":
@@ -1209,14 +1563,34 @@ def main(
                 continue
 
             elif base_cmd == "/memory":
-                mem_found = False
+                mem_path = None
                 for f in [Path.cwd() / "ONNO.md", Path.cwd() / "CLAUDE.md"]:
                     if f.exists():
-                        console.print(Panel(f.read_text(encoding="utf-8"), title=f"Project Memory ({f.name})", border_style="green"))
-                        mem_found = True
+                        mem_path = f
                         break
-                if not mem_found:
+                mem_path = mem_path or (Path.cwd() / "ONNO.md")
+
+                mem_action = cmd_arg.strip().split(maxsplit=1)[0].lower() if cmd_arg.strip() else ""
+                if mem_action == "edit":
+                    addition = cmd_arg.strip().split(maxsplit=1)[1].strip() if len(cmd_arg.strip().split(maxsplit=1)) > 1 else ""
+                    if not addition:
+                        console.print("[yellow]Usage: /memory edit <instruksi yang ditambahkan>[/yellow]")
+                    else:
+                        try:
+                            with open(mem_path, "a", encoding="utf-8") as fh:
+                                prefix = "\n" if mem_path.exists() and mem_path.stat().st_size else "# ONNO.md — Project Instructions\n\n"
+                                fh.write(f"{prefix}- {addition}\n")
+                            session.refresh_system_prompt()
+                            console.print(f"[bold green]✔ Ditambahkan ke {mem_path.name}:[/bold green] {addition}")
+                        except OSError as exc:
+                            console.print(f"[red]Gagal menulis memori:[/red] {exc}")
+                    continue
+
+                if mem_path.exists():
+                    console.print(Panel(Text(mem_path.read_text(encoding="utf-8")), title=f"Project Memory ({mem_path.name})", border_style="green"))
+                else:
                     console.print("[dim]No ONNO.md or CLAUDE.md found. Use /init to generate one.[/dim]")
+                console.print("[dim]/memory edit <teks> untuk menambah instruksi.[/dim]")
                 continue
 
             elif base_cmd == "/output-style":
@@ -1227,8 +1601,8 @@ def main(
                     console.print(f"[green]✔ Output style set to: {st}[/green]")
                 continue
 
-            elif base_cmd in ("/permissions", "/allowed-tools", "/mode", "/yolo", "/auto", "/manual"):
-                if base_cmd == "/yolo":
+            elif base_cmd in ("/permissions", "/allowed-tools", "/mode", "/yolo", "/accept-all", "/auto", "/manual"):
+                if base_cmd in ("/yolo", "/accept-all"):
                     cmd_arg = "all"
                 elif base_cmd == "/auto":
                     cmd_arg = "auto"
@@ -1329,20 +1703,31 @@ def main(
                 continue
 
             elif base_cmd in ("/sessions", "/history"):
-                sess_list = list_sessions()
+                query = cmd_arg.strip()
+                sess_list = search_sessions(query) if query else list_sessions()
                 if not sess_list:
-                    console.print("[dim]No saved sessions found.[/dim]")
+                    if query:
+                        console.print(f"[dim]Tidak ada sesi yang cocok dengan '{query}'.[/dim]")
+                    else:
+                        console.print("[dim]No saved sessions found.[/dim]")
                 else:
-                    t = Table(title=f"Saved Sessions ({len(sess_list)})", border_style="cyan")
+                    title = f"Saved Sessions ({len(sess_list)})"
+                    if query:
+                        title += f" · filter: {query}"
+                    t = Table(title=title, border_style="cyan")
+                    t.add_column("#", style="dim", justify="right")
                     t.add_column("Session ID", style="bold cyan")
+                    t.add_column("Title", style="white", max_width=32)
                     t.add_column("Last Updated", style="yellow")
                     t.add_column("Model", style="white")
                     t.add_column("Turns", justify="right")
                     t.add_column("Messages", justify="right")
                     t.add_column("Workspace", style="dim")
-                    for s in sess_list[:15]:
+                    for idx, s in enumerate(sess_list[:15], start=1):
                         t.add_row(
+                            str(idx),
                             s["id"],
+                            (s.get("title") or "-")[:32],
                             s["updated_at"][:19].replace("T", " "),
                             s["model_name"],
                             str(s["turns_count"]),
@@ -1350,12 +1735,27 @@ def main(
                             str(Path(s.get("cwd", "")).name or s.get("cwd", ""))[:25]
                         )
                     console.print(t)
-                    console.print("[dim]Use /resume <session_id> to restore a session.[/dim]")
+                    console.print(
+                        "[dim]Pakai /resume <nomor> (mis. /resume 2) atau /resume <session_id>. "
+                        "/sessions <kata> untuk mencari.[/dim]"
+                    )
                 continue
 
             elif base_cmd in ("/resume", "/continue"):
                 target_id = cmd_arg.strip()
-                if not target_id:
+                if target_id:
+                    resolved = resolve_session_ref(target_id)
+                    if not resolved:
+                        # Not in this workspace's listing — accept an exact saved id.
+                        resolved = target_id if load_session(target_id) else None
+                    if not resolved:
+                        console.print(
+                            f"[red]Sesi '{target_id}' tidak ditemukan atau nomornya di luar daftar.[/red]"
+                        )
+                        console.print("[dim]Lihat /sessions untuk nomor dan ID yang valid.[/dim]")
+                        continue
+                    target_id = resolved
+                else:
                     lat = get_latest_session()
                     if lat:
                         target_id = lat["session_id"]
@@ -1365,12 +1765,12 @@ def main(
 
                 loaded = load_session(target_id)
                 if loaded:
-                    session.session_id = loaded.get("session_id", target_id)
-                    session.messages = loaded.get("messages", session.messages)
-                    session.turns_count = loaded.get("turns_count", 0)
-                    session.permission_mode = loaded.get("permission_mode", "auto")
-                    session.plan_mode = loaded.get("plan_mode", False)
+                    session.restore_from_dict(loaded)
                     console.print(f"[bold green]✔ Resumed session:[/bold green] [yellow]{target_id}[/yellow] ({len(session.messages)} messages, {session.turns_count} turns)")
+                    if session.goal:
+                        console.print(f"[dim]Goal aktif: {session.goal}[/dim]")
+                    if session.extra_dirs:
+                        console.print(f"[dim]Extra dirs: {', '.join(session.extra_dirs)}[/dim]")
                 else:
                     console.print(f"[red]Session '{target_id}' not found.[/red]")
                 continue
@@ -1392,8 +1792,25 @@ def main(
 
             elif base_cmd == "/run":
                 target_cmd = cmd_arg or "pytest || npm test || python3 -m unittest"
-                console.print(f"[bold cyan]Running verification command:[/bold cyan] {target_cmd}")
-                session.run_turn(f"Execute shell verification: {target_cmd} and report findings.")
+                console.print(f"[bold cyan]Menjalankan:[/bold cyan] {target_cmd}")
+                if session.permission_mode == "manual":
+                    console.print(f"[dim]Catatan: /run mengeksekusi shell langsung (di luar mode {session.permission_mode} milik tool).[/dim]")
+                try:
+                    proc = subprocess.run(
+                        target_cmd, shell=True, capture_output=True, text=True, timeout=600
+                    )
+                    output = ((proc.stdout or "") + (proc.stderr or "")).strip()
+                    if len(output) > 6000:
+                        output = output[:6000] + "\n... (dipotong)"
+                    console.print(Panel(
+                        output or "(tidak ada output)",
+                        title=f"exit={proc.returncode}",
+                        border_style="green" if proc.returncode == 0 else "red",
+                    ))
+                except subprocess.TimeoutExpired:
+                    console.print("[red]Command timeout setelah 600s.[/red]")
+                except OSError as exc:
+                    console.print(f"[red]Gagal menjalankan command:[/red] {exc}")
                 continue
 
             elif base_cmd in ("/code-review", "/review"):
@@ -1454,6 +1871,11 @@ def main(
 
             elif base_cmd == "/skill":
                 parts = clean.split()
+                if not cmd_arg.strip():
+                    total = len(list_skills())
+                    console.print(f"[yellow]Usage: /skill <nama>[/yellow] atau [cyan]/skill install <url>[/cyan]")
+                    console.print(f"[dim]{total} skill tersedia — ketik /skills untuk daftar.[/dim]")
+                    continue
                 if len(parts) >= 3 and parts[1] == "install":
                     url = parts[2]
                     try:
@@ -1477,15 +1899,273 @@ def main(
                     console.print(f"[red]Skill '{skill_name}' not found. Use /skills to list available ones.[/red]")
                 continue
 
+            elif base_cmd in ("/steps", "/max_steps", "/limit"):
+                if cmd_arg.isdecimal():
+                    val = int(cmd_arg)
+                    if val < 1:
+                        console.print("[yellow]Batas langkah minimal 1.[/yellow]")
+                    else:
+                        cfg.max_steps = val
+                        try:
+                            save_config(cfg)
+                        except OSError as exc:
+                            console.print(f"[yellow]Gagal menyimpan konfigurasi: {exc}[/yellow]")
+                        console.print(f"[bold green]✔ Max steps per giliran:[/bold green] {val}")
+                else:
+                    console.print(f"[bold cyan]Max steps per giliran:[/bold cyan] {cfg.max_steps}")
+                    console.print("[dim]Gunakan /steps 100 untuk mengubah batas.[/dim]")
+                continue
+
+            elif base_cmd in ("/autoresume", "/auto-resume"):
+                arg = cmd_arg.lower().strip()
+                if arg in ("on", "true", "1", "yes"):
+                    cfg.auto_resume = True
+                    save_config(cfg)
+                    console.print("[bold green]✔ Auto-resume ON[/bold green] (sesi terakhir dimuat otomatis saat dibuka)")
+                elif arg in ("off", "false", "0", "no"):
+                    cfg.auto_resume = False
+                    save_config(cfg)
+                    console.print("[bold green]✔ Auto-resume OFF[/bold green]")
+                elif arg in ("", "status"):
+                    state = "ON" if cfg.auto_resume else "OFF"
+                    console.print(f"[bold cyan]Auto-resume:[/bold cyan] {state}")
+                    console.print("[dim]Gunakan /autoresume on atau /autoresume off.[/dim]")
+                else:
+                    console.print("[yellow]Usage: /autoresume [on|off][/yellow]")
+                continue
+
+            elif base_cmd in ("/save", "/save-session"):
+                try:
+                    saved_path = session.save()
+                except (OSError, ValueError) as exc:
+                    console.print(f"[red]Gagal menyimpan sesi:[/red] {exc}")
+                else:
+                    console.print(f"[bold green]✔ Sesi disimpan:[/bold green] {saved_path}")
+                    console.print(
+                        f"[dim]id={session.session_id} · {len(session.messages)} pesan · "
+                        f"{session.turns_count} giliran[/dim]"
+                    )
+                continue
+
+            elif base_cmd == "/all":
+                # /yolo and /accept-all are handled by the permission branch above.
+                session.set_permission_mode("all")
+                console.print("[bold green]✔ Permission mode: ALL[/bold green] (tools langsung dieksekusi tanpa konfirmasi)")
+                continue
+
+            elif base_cmd == "/test":
+                target_cmd = cmd_arg.strip() or detect_test_command()
+                if not target_cmd:
+                    console.print("[yellow]Tidak mendeteksi test runner (pytest/npm/go/cargo/Makefile).[/yellow]")
+                    console.print("[dim]Gunakan /test <command> untuk menentukan sendiri.[/dim]")
+                else:
+                    console.print(f"[bold cyan]Menjalankan test:[/bold cyan] {target_cmd}")
+                    code, output = run_shell_capture(target_cmd, timeout=900)
+                    console.print(Panel(
+                        output or "(tidak ada output)",
+                        title=f"test exit={code}",
+                        border_style="green" if code == 0 else "red",
+                    ))
+                continue
+
+            elif base_cmd == "/todo":
+                action, _, rest = cmd_arg.strip().partition(" ")
+                action = action.lower()
+                rest = rest.strip()
+                if action == "add" and rest:
+                    n = session.add_todo(rest)
+                    console.print(f"[green]✔ Todo #{n} ditambahkan:[/green] {rest}")
+                elif action in ("done", "toggle") and action and rest.isdecimal():
+                    text = session.complete_todo(int(rest))
+                    if text is None:
+                        console.print(f"[yellow]Todo #{rest} tidak ada.[/yellow]")
+                    else:
+                        console.print(f"[green]✔ Ditandai:[/green] {text}")
+                elif action in ("rm", "remove", "del") and rest.isdecimal():
+                    text = session.remove_todo(int(rest))
+                    console.print(f"[green]✔ Dihapus:[/green] {text}" if text else f"[yellow]Todo #{rest} tidak ada.[/yellow]")
+                elif action == "clear":
+                    session.clear_todos()
+                    console.print("[dim]Todo list dikosongkan.[/dim]")
+                else:
+                    if not session.todos:
+                        console.print("[dim]Belum ada todo. /todo add <teks> untuk menambah.[/dim]")
+                    else:
+                        lines = [
+                            f"{i}. {'[x]' if t.get('done') else '[ ]'} {t.get('text')}"
+                            for i, t in enumerate(session.todos, 1)
+                        ]
+                        console.print(Panel(Text("\n".join(lines)), title=f"Todo ({len(session.todos)})", border_style="cyan"))
+                        console.print("[dim]/todo add <teks> · /todo done <n> · /todo rm <n> · /todo clear[/dim]")
+                continue
+
+            elif base_cmd == "/snapshot":
+                name = session.save_named_checkpoint(cmd_arg)
+                console.print(f"[green]✔ Snapshot '{name}' disimpan[/green] ({len(session.messages)} pesan)")
+                console.print(f"[dim]Pulihkan dengan /restore {name}[/dim]")
+                continue
+
+            elif base_cmd == "/restore":
+                if not cmd_arg.strip():
+                    if not session.named_checkpoints:
+                        console.print("[dim]Belum ada snapshot bernama. /snapshot <label> untuk membuat.[/dim]")
+                    else:
+                        console.print(f"[bold cyan]Snapshot tersedia:[/bold cyan] {', '.join(session.named_checkpoints)}")
+                elif session.restore_named_checkpoint(cmd_arg):
+                    console.print(f"[green]✔ Percakapan dipulihkan ke snapshot '{cmd_arg.strip()}'[/green] ({len(session.messages)} pesan)")
+                else:
+                    console.print(f"[red]Snapshot '{cmd_arg.strip()}' tidak ditemukan.[/red]")
+                continue
+
+            elif base_cmd == "/undo-file":
+                if not cmd_arg.strip():
+                    console.print("[yellow]Usage: /undo-file <path>[/yellow]")
+                else:
+                    result = session.undo_file(cmd_arg.strip())
+                    if result:
+                        console.print(f"[green]✔ {result}[/green]")
+                    else:
+                        console.print(f"[yellow]Tidak ada snapshot untuk:[/yellow] {cmd_arg.strip()}")
+                continue
+
+            elif base_cmd in ("/grep", "/search"):
+                if not cmd_arg.strip():
+                    console.print("[yellow]Usage: /grep <pola>[/yellow]")
+                else:
+                    total, text = grep_repo(cmd_arg.strip())
+                    if not total:
+                        console.print(f"[dim]Tidak ada hasil untuk '{cmd_arg.strip()}'.[/dim]")
+                    else:
+                        console.print(Panel(Text(text), title=f"grep: {_escape_markup(cmd_arg.strip())} ({total} baris)", border_style="cyan"))
+                continue
+
+            elif base_cmd == "/find":
+                if not cmd_arg.strip():
+                    console.print("[yellow]Usage: /find <nama-file>[/yellow]")
+                else:
+                    total, text = find_files(cmd_arg.strip())
+                    if not total:
+                        console.print(f"[dim]Tidak ada file yang cocok dengan '{cmd_arg.strip()}'.[/dim]")
+                    else:
+                        console.print(Panel(Text(text), title=f"find: {_escape_markup(cmd_arg.strip())} ({total} file)", border_style="cyan"))
+                continue
+
+            elif base_cmd == "/stash":
+                parts_ = cmd_arg.split(maxsplit=1)
+                action_ = parts_[0].lower() if parts_ else "list"
+                label_ = parts_[1] if len(parts_) > 1 else ""
+                ok, text = git_stash(action_, label_)
+                console.print(Panel(Text(text), title=f"git stash {_escape_markup(action_)}", border_style="green" if ok else "red"))
+                continue
+
+            elif base_cmd == "/lint":
+                target_cmd = cmd_arg.strip() or detect_lint_command()
+                if not target_cmd:
+                    console.print("[yellow]Tidak mendeteksi linter (ruff/flake8/eslint/gofmt/clippy).[/yellow]")
+                else:
+                    console.print(f"[bold cyan]Menjalankan linter:[/bold cyan] {target_cmd}")
+                    code, output = run_shell_capture(target_cmd, timeout=600)
+                    console.print(Panel(
+                        output or "(bersih, tidak ada temuan)",
+                        title=f"lint exit={code}",
+                        border_style="green" if code == 0 else "yellow",
+                    ))
+                continue
+
+            elif base_cmd == "/alias":
+                body = cmd_arg.strip()
+                if not body:
+                    if not cfg.aliases:
+                        console.print("[dim]Belum ada alias. /alias <nama> </command ...>[/dim]")
+                    else:
+                        table_ = Table(title=f"Alias ({len(cfg.aliases)})", border_style="cyan")
+                        table_.add_column("Alias", style="bold cyan")
+                        table_.add_column("Command", style="white")
+                        for k_, v_ in sorted(cfg.aliases.items()):
+                            table_.add_row(f"/{k_}", v_)
+                        console.print(table_)
+                elif body.split(maxsplit=1)[0].lower() in ("rm", "remove", "del"):
+                    name_ = body.split(maxsplit=1)[1].strip() if len(body.split(maxsplit=1)) > 1 else ""
+                    if cfg.aliases.pop(name_, None) is not None:
+                        save_config(cfg)
+                        console.print(f"[green]✔ Alias '{name_}' dihapus.[/green]")
+                    else:
+                        console.print(f"[yellow]Alias '{name_}' tidak ada.[/yellow]")
+                else:
+                    name_, _, target_ = body.partition(" ")
+                    name_ = name_.lstrip("/").strip()
+                    target_ = target_.strip()
+                    if not name_ or not target_.startswith("/"):
+                        console.print("[yellow]Usage: /alias <nama> </command ...>[/yellow]")
+                    else:
+                        cfg.aliases[name_] = target_
+                        save_config(cfg)
+                        console.print(f"[green]✔ Alias '/{name_}' →[/green] {target_}")
+                continue
+
+            elif base_cmd in ("/title", "/session"):
+                body = cmd_arg.strip()
+                if base_cmd == "/session" and body.lower().startswith("title"):
+                    body = body[5:].strip()
+                if not body:
+                    console.print(f"[bold cyan]Judul sesi:[/bold cyan] {session.title or '(belum diset)'}")
+                    console.print("[dim]Gunakan /title <teks> untuk menamai sesi ini.[/dim]")
+                else:
+                    session.title = body[:120]
+                    try:
+                        session.save()
+                    except (OSError, ValueError) as exc:
+                        console.print(f"[yellow]Judul diset, gagal menyimpan: {exc}[/yellow]")
+                        continue
+                    console.print(f"[green]✔ Judul sesi:[/green] {session.title}")
+                continue
+
+            elif base_cmd == "/tokens":
+                rows = token_breakdown(session.messages)
+                total_tok = sum(r[2] for r in rows) or 1
+                table_ = Table(title="Token Breakdown (approx)", border_style="magenta")
+                table_.add_column("Kategori", style="bold cyan")
+                table_.add_column("Pesan", justify="right")
+                table_.add_column("Token", justify="right")
+                table_.add_column("Porsi", justify="right")
+                for cat_, count_, tok_ in rows:
+                    table_.add_row(cat_, str(count_), f"~{tok_:,}", f"{tok_ * 100 / total_tok:.0f}%")
+                console.print(table_)
+                console.print(f"[bold]Total:[/bold] ~{total_tok:,} token · /context untuk rincian per pesan")
+                continue
+
+            elif base_cmd == "/log":
+                n = int(cmd_arg) if cmd_arg.strip().isdecimal() else 10
+                ok, text = git_log(n)
+                console.print(Panel(Text(text), title=f"git log -{n}", border_style="yellow" if ok else "red"))
+                continue
+
+            elif base_cmd.startswith("/"):
+                # Never forward an unknown slash command to the model: it would be
+                # billed as a prompt and the user gets a hallucinated reply.
+                console.print(f"[yellow]Command tidak dikenal:[/yellow] {base_cmd}")
+                console.print("[dim]Ketik /help untuk daftar command.[/dim]")
+                continue
+
             # Standard user prompt turn
             clean_with_attachments = expand_at_file_mentions(clean)
             resp = session.run_turn(clean_with_attachments)
             if resp:
                 last_response = resp
+            if session.cancel_requested.is_set():
+                # ESC mid-turn: keep the prompt around so it can be re-sent.
+                save_draft(clean)
+                pending_default = clean
+                console.print("[dim]Draft disimpan — tekan Enter untuk mengirim ulang.[/dim]")
 
         except (KeyboardInterrupt, EOFError):
             console.print("\n[dim]Session ended.[/dim]")
             break
+        except Exception as exc:
+            # One bad slash command must not end the session mid-conversation.
+            # History is already saved by run_turn, so only the prompt is lost.
+            console.print(f"[bold red]Turn failed:[/bold red] {exc}")
+            console.print("[dim]Ketik /exit atau Ctrl+D untuk keluar.[/dim]")
 
 
 if __name__ == "__main__":

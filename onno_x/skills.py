@@ -7,10 +7,27 @@ from pydantic import BaseModel
 from onno_x.config import CONFIG_DIR
 
 GLOBAL_SKILLS_DIR = CONFIG_DIR / "skills"
-LOCAL_DOT_SKILLS_DIR = Path.cwd() / ".onno-x" / "skills"
-REPO_SKILLS_DIR = Path.cwd() / "skills"
 PACKAGE_SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
 MARKETPLACES_FILE = CONFIG_DIR / "marketplaces.json"
+
+
+def local_dot_skills_dir() -> Path:
+    """Project-local skills dir, resolved on every call.
+
+    These used to be module constants built from `Path.cwd()` at import time, so
+    after `/cd` the CLI kept reading and writing skills in the startup directory.
+    """
+    return Path.cwd() / ".onno-x" / "skills"
+
+
+def repo_skills_dir() -> Path:
+    return Path.cwd() / "skills"
+
+
+def invalidate_skills_cache() -> None:
+    """Drop the discovery cache so cwd-dependent sources are rescanned."""
+    global _SKILLS_CACHE
+    _SKILLS_CACHE = None
 
 
 class Skill(BaseModel):
@@ -24,6 +41,30 @@ class Skill(BaseModel):
 def ensure_skills_dir() -> None:
     GLOBAL_SKILLS_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+_SKILL_NAME_MAX = 64
+
+
+def sanitize_skill_name(name: str) -> Optional[str]:
+    """Return a safe skill name, or None if it could escape the skills dir.
+
+    Skill names become filenames (`<name>.md`) and folder names. The name can
+    come from a remote SKILL.md frontmatter (`/skill install <url>`), so it must
+    never be able to traverse out of the skills directory.
+    """
+    if not isinstance(name, str):
+        return None
+    cleaned = name.strip()
+    if not cleaned or len(cleaned) > _SKILL_NAME_MAX:
+        return None
+    if cleaned.startswith(".") or cleaned in (".", ".."):
+        return None
+    if "/" in cleaned or "\\" in cleaned or "\x00" in cleaned:
+        return None
+    if Path(cleaned).name != cleaned:
+        return None
+    return cleaned
 
 
 def load_marketplaces() -> Dict[str, str]:
@@ -81,6 +122,14 @@ def parse_skill_file(path: Path, scope: str = "global") -> Optional[Skill]:
             elif line.lower().startswith("description:"):
                 desc = line.split(":", 1)[1].strip()
                 break
+
+    # Frontmatter names are untrusted: fall back to the file/dir name, then skip.
+    safe_name = sanitize_skill_name(name)
+    if not safe_name:
+        safe_name = sanitize_skill_name(path.stem) or sanitize_skill_name(path.parent.name)
+    if not safe_name:
+        return None
+    name = safe_name
 
     return Skill(
         name=name,
@@ -143,12 +192,14 @@ def list_skills(force_reload: bool = False) -> Dict[str, Skill]:
     skills.update(scan_dir_for_skills(GLOBAL_SKILLS_DIR, "global"))
 
     # 3. Current workspace repo skills (./skills/)
-    if REPO_SKILLS_DIR.exists() and REPO_SKILLS_DIR.resolve() != PACKAGE_SKILLS_DIR.resolve():
-        skills.update(scan_dir_for_skills(REPO_SKILLS_DIR, "repo"))
+    repo_dir = repo_skills_dir()
+    if repo_dir.exists() and repo_dir.resolve() != PACKAGE_SKILLS_DIR.resolve():
+        skills.update(scan_dir_for_skills(repo_dir, "repo"))
 
     # 4. Local project override (.onno-x/skills/)
-    if LOCAL_DOT_SKILLS_DIR.exists():
-        skills.update(scan_dir_for_skills(LOCAL_DOT_SKILLS_DIR, "local"))
+    local_dir = local_dot_skills_dir()
+    if local_dir.exists():
+        skills.update(scan_dir_for_skills(local_dir, "local"))
 
     _SKILLS_CACHE = skills
     return skills
@@ -156,16 +207,19 @@ def list_skills(force_reload: bool = False) -> Dict[str, Skill]:
 
 def add_skill(name: str, content: str, description: Optional[str] = None, local: bool = False) -> Path:
     global _SKILLS_CACHE
+    safe_name = sanitize_skill_name(name)
+    if not safe_name:
+        raise ValueError(f"Invalid skill name: {name!r}")
     _SKILLS_CACHE = None
-    target_dir = LOCAL_DOT_SKILLS_DIR if local else GLOBAL_SKILLS_DIR
+    target_dir = local_dot_skills_dir() if local else GLOBAL_SKILLS_DIR
     target_dir.mkdir(parents=True, exist_ok=True)
-    target_file = target_dir / f"{name}.md"
+    target_file = target_dir / f"{safe_name}.md"
 
     header = ""
     if description:
         header = f"# {description}\n\n"
     elif not content.startswith("#"):
-        header = f"# Skill: {name}\n\n"
+        header = f"# Skill: {safe_name}\n\n"
 
     target_file.write_text(f"{header}{content.strip()}\n", encoding="utf-8")
     return target_file
@@ -173,11 +227,14 @@ def add_skill(name: str, content: str, description: Optional[str] = None, local:
 
 def delete_skill(name: str) -> bool:
     global _SKILLS_CACHE
+    safe_name = sanitize_skill_name(name)
+    if not safe_name:
+        return False
     _SKILLS_CACHE = None
     removed = False
-    for base in [GLOBAL_SKILLS_DIR, LOCAL_DOT_SKILLS_DIR, REPO_SKILLS_DIR]:
-        g_file = base / f"{name}.md"
-        g_folder = base / name
+    for base in [GLOBAL_SKILLS_DIR, local_dot_skills_dir(), repo_skills_dir()]:
+        g_file = base / f"{safe_name}.md"
+        g_folder = base / safe_name
         if g_file.exists():
             g_file.unlink()
             removed = True
@@ -188,12 +245,15 @@ def delete_skill(name: str) -> bool:
 
 
 def import_skills_from_dir(src: Path, target_global: bool = True) -> int:
-    target_dir = GLOBAL_SKILLS_DIR if target_global else LOCAL_DOT_SKILLS_DIR
+    target_dir = GLOBAL_SKILLS_DIR if target_global else local_dot_skills_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
     scanned = scan_dir_for_skills(src, "import")
     count = 0
     for name, skill in scanned.items():
-        dest = target_dir / f"{name}.md"
+        safe_name = sanitize_skill_name(name)
+        if not safe_name:
+            continue
+        dest = target_dir / f"{safe_name}.md"
         dest.write_text(skill.content, encoding="utf-8")
         count += 1
     return count
@@ -328,8 +388,12 @@ def fetch_skill_from_url(url: str) -> Skill:
                 desc = line[2:].strip()
                 break
 
+    safe_name = sanitize_skill_name(name)
+    if not safe_name:
+        safe_name = sanitize_skill_name(derived_name) or "imported-skill"
+
     return Skill(
-        name=name,
+        name=safe_name,
         description=desc,
         content=text,
         scope="plugin",

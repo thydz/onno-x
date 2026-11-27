@@ -6,6 +6,10 @@ from onno_x.config import ModelSpec
 class BaseProvider(ABC):
     def __init__(self, spec: ModelSpec):
         self.spec = spec
+        # Set by chat() when the model stopped because it ran out of output
+        # tokens. Without this the agent cannot tell a finished answer from a
+        # truncated one, commits the fragment, and the build dies mid-file.
+        self.last_truncated = False
 
     @abstractmethod
     def chat(
@@ -13,6 +17,7 @@ class BaseProvider(ABC):
         messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
         on_chunk: Optional[Callable[[str], None]] = None,
+        cancel_event: Optional[Any] = None,
     ) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Send messages and available tools.

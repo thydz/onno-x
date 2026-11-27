@@ -1,3 +1,4 @@
+import inspect
 from typing import Any, Callable, Dict
 from onno_x.tools.shell import run_shell
 from onno_x.tools.fs import read_file, write_file, edit_file, delete_file, list_dir, grep_search
@@ -189,7 +190,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "obsidian_search_notes",
-            "description": "Search long-term memory notes, pentest reports, and knowledge in Obsidian (192.168.100.102:2233).",
+            "description": "Search long-term memory notes, pentest reports, and knowledge in the configured Obsidian memory server.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -217,7 +218,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "obsidian_write_note",
-            "description": "Save or update a persistent note into Obsidian memory on 192.168.100.102.",
+            "description": "Save or update a persistent note in the configured Obsidian memory server.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -244,7 +245,7 @@ def ask_user(question: str, options: list = None) -> str:
 
     try:
         ans = console.input(prompt_text).strip()
-        if options and ans.isdigit():
+        if options and ans.isdecimal():
             idx = int(ans) - 1
             if 0 <= idx < len(options):
                 ans = options[idx]
@@ -288,16 +289,13 @@ SAFE_READ_TOOLS = {
     "ask_user",
     "obsidian_search_notes",
     "obsidian_read_note",
-    "mcp__hexstrike__search_tools",
-    "mcp__api-anything__find_sites",
-    "mcp__api-anything__list_sites",
-    "mcp__api-anything__list_operations",
-    "mcp__api-anything__site_status",
 }
 
 
 def should_prompt_permission(tool_name: str, args: dict, permission_mode: str = "auto") -> bool:
     """Determine if a tool execution requires user confirmation based on permission mode."""
+    if not isinstance(args, dict):
+        args = {}
     mode = (permission_mode or "auto").lower().strip()
     # 1. 'all' / 'accept-all' / 'yolo' mode: 100% direct execution, never prompt
     if mode in ("all", "accept-all", "accept_all", "yolo"):
@@ -318,7 +316,7 @@ def should_prompt_permission(tool_name: str, args: dict, permission_mode: str = 
         return True
 
     if tool_name == "run_shell":
-        cmd = args.get("command", "").lower()
+        cmd = str(args.get("command", "") or "").lower()
         if any(p in cmd for p in DANGEROUS_SHELL_PATTERNS):
             return True
         return False
@@ -376,6 +374,32 @@ def prompt_cli_permission_with_timeout(timeout: float = 60.0) -> str:
                 pass
 
 
+def _call_tool_runner(runner, args):
+    """Call a tool runner with the args the model sent.
+
+    Models sometimes emit extra keys (or a single ``raw`` string when the JSON
+    was malformed). Passing those straight through raises TypeError inside the
+    tool, so drop unknown keys when the runner's signature can tell us which
+    ones it accepts.
+    """
+    if not isinstance(args, dict):
+        return runner(args)
+    try:
+        params = inspect.signature(runner).parameters
+    except (TypeError, ValueError):
+        return runner(**args)
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return runner(**args)
+    accepted = {name for name, p in params.items() if p.kind in (
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        inspect.Parameter.KEYWORD_ONLY,
+    )}
+    filtered = {k: v for k, v in args.items() if k in accepted}
+    if args and not filtered:
+        raise TypeError(f"unexpected argument(s): {', '.join(sorted(args))}")
+    return runner(**filtered)
+
+
 def execute_tool(name: str, args: dict, permission_mode: str = "auto", session=None) -> str:
     from onno_x.mcp import MCPManager
     runner = TOOL_RUNNERS.get(name)
@@ -386,26 +410,28 @@ def execute_tool(name: str, args: dict, permission_mode: str = "auto", session=N
         return f"Error: Unknown tool {name}"
 
     effective_mode = getattr(session, "permission_mode", permission_mode)
+    safe_args = args if isinstance(args, dict) else {}
 
-    if should_prompt_permission(name, args, effective_mode):
+    if should_prompt_permission(name, safe_args, effective_mode):
         from onno_x.ui import console
 
         handler = getattr(session, "permission_handler", None)
         if handler:
-            choice = handler(name, args, effective_mode)
+            choice = handler(name, safe_args, effective_mode)
         else:
+            from rich.markup import escape as _esc
             console.print(f"\n[bold yellow]⚡ Permission Request ({effective_mode.upper()} mode):[/bold yellow]")
             if name == "run_shell":
-                console.print(f"   Command: [bold cyan]{args.get('command')}[/bold cyan]")
+                console.print(f"   Command: [bold cyan]{_esc(str(safe_args.get('command')))}[/bold cyan]")
             elif name in ("write_file", "edit_file"):
-                console.print(f"   Action:  [bold yellow]{name}[/bold yellow] on [bold cyan]{args.get('path')}[/bold cyan]")
+                console.print(f"   Action:  [bold yellow]{_esc(str(name))}[/bold yellow] on [bold cyan]{_esc(str(safe_args.get('path')))}[/bold cyan]")
             elif name == "delete_file":
-                console.print(f"   Action:  [bold red]Permanently delete[/bold red] [bold white]{args.get('path')}[/bold white]")
+                console.print(f"   Action:  [bold red]Permanently delete[/bold red] [bold white]{_esc(str(safe_args.get('path')))}[/bold white]")
             elif is_mcp:
-                console.print(f"   Action:  [bold magenta]MCP Tool Execution[/bold magenta] [bold cyan]{name}[/bold cyan]")
-                console.print(f"   Args:    {args}")
+                console.print(f"   Action:  [bold magenta]MCP Tool Execution[/bold magenta] [bold cyan]{_esc(str(name))}[/bold cyan]")
+                console.print(f"   Args:    {_esc(str(args))}")
             else:
-                console.print(f"   Tool:    [cyan]{name}[/cyan] ({args})")
+                console.print(f"   Tool:    [cyan]{_esc(str(name))}[/cyan] ({_esc(str(args))})")
 
             choice = prompt_cli_permission_with_timeout(timeout=60.0)
 
@@ -423,6 +449,6 @@ def execute_tool(name: str, args: dict, permission_mode: str = "auto", session=N
         return f"Error: MCP Tool '{name}' returned no response"
 
     try:
-        return runner(**args)
+        return _call_tool_runner(runner, args)
     except Exception as e:
         return f"Error executing {name}: {str(e)}"
