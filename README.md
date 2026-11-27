@@ -15,7 +15,7 @@ your local data stays in `~/.onno-x` / `.onno-x`.
 
 ---
 
-## Install (one-liner, like Claude Code)
+## Install
 
 **No PyPI, no VPS, no root.** GitHub + Firebase Hosting (or raw GitHub).
 Needs **Python 3.10+**, **git**, network to GitHub + PyPI, `curl`/`wget` + `bash`.
