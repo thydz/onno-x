@@ -1,6 +1,6 @@
 # onno-x
 
-**Multi-model coding agent CLI** with Claude Code-style slash commands. No hardcoded
+**Multi-model coding agent CLI** . No hardcoded
 model, no private IP, no shipped API key / MCP secret. You add your own model;
 your local data stays in `~/.onno-x` / `.onno-x`.
 
